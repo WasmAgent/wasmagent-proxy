@@ -1,0 +1,16 @@
+apiVersion: extensions.istio.io/v1alpha1
+kind: WasmPlugin
+metadata:
+  name: wasmagent-proxy-evidence
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: your-agent-app
+  url: oci://ghcr.io/wasmAgent/wasmagent-proxy:latest
+  phase: AUTHN
+  pluginConfig:
+    default_mode: validation
+    key_id: wasmagent-prod-key
+    trace_id_header: x-b3-traceid
+    agent_id_header: x-agent-id

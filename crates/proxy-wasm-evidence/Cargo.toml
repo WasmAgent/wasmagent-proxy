@@ -1,0 +1,25 @@
+[package]
+name        = "proxy-wasm-evidence"
+description = "Proxy-Wasm HTTP filter — AEP evidence recording + capability policy enforcement"
+version.workspace    = true
+edition.workspace    = true
+license.workspace    = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+# Enable when building as a native binary for benchmarks/tests
+native = []
+
+[dependencies]
+aep-core     = { path = "../aep-core" }
+proxy-wasm   = "0.2"
+serde        = { version = "1", features = ["derive"] }
+serde_json   = "1"
+log          = "0.4"
+
+[dev-dependencies]
+proxy-wasm-test-framework = "0.1"

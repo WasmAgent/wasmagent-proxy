@@ -1,0 +1,30 @@
+use serde::{Deserialize, Serialize};
+use aep_core::recording::RecordingMode;
+
+/// Configuration loaded from the Wasm plugin's root context (e.g. Istio WasmPlugin spec).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginConfig {
+    /// Default recording mode when no risk signals are present.
+    pub default_mode: RecordingMode,
+    /// Key ID used in AEP signature envelopes.
+    pub key_id: String,
+    /// Hex-encoded Ed25519 signing key (32 bytes). In production, inject via
+    /// a Kubernetes Secret mounted as an environment variable — never hardcode.
+    pub signing_key_hex: Option<String>,
+    /// Trace/session header to propagate as AEP trace_id.
+    pub trace_id_header: String,
+    /// Agent identity header (e.g. x-agent-id).
+    pub agent_id_header: String,
+}
+
+impl Default for PluginConfig {
+    fn default() -> Self {
+        Self {
+            default_mode: RecordingMode::Validation,
+            key_id: "default".into(),
+            signing_key_hex: None,
+            trace_id_header: "x-b3-traceid".into(),
+            agent_id_header: "x-agent-id".into(),
+        }
+    }
+}

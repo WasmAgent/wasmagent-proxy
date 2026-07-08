@@ -1,0 +1,6 @@
+wasmagent-proxy
+Copyright 2024 WasmAgent contributors
+
+This product includes software developed by the WasmAgent project.
+The AEP recording policy logic is a port of @wasmagent/capability-compiler
+(https://github.com/WasmAgent/wasmagent-js).
