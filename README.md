@@ -35,6 +35,17 @@ request — without replacing your existing gateway.
 └─────────────────────────────────────────────────┘
 ```
 
+## Documentation
+
+Detailed guides live under [`docs/`](docs/):
+
+| Guide | What it covers |
+|---|---|
+| [`docs/architecture.md`](docs/architecture.md) | System diagram, component responsibilities, AEP recording flow, Ed25519 signing |
+| [`docs/deployment.md`](docs/deployment.md) | Envoy quickstart, Istio WasmPlugin, K8s signing-key secret injection |
+| [`docs/configuration.md`](docs/configuration.md) | Every config field with type, default, and example |
+| [`docs/aep-evidence-format.md`](docs/aep-evidence-format.md) | AEP record structure, side-effect classification, DSSE envelope |
+
 ## Quick start
 
 ```bash
