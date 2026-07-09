@@ -1,4 +1,4 @@
-WASM_TARGET := wasm32-wasi
+WASM_TARGET := wasm32-wasip1
 RELEASE_DIR  := target/$(WASM_TARGET)/release
 
 .PHONY: build test bench fmt lint clean wasm

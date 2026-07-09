@@ -2,7 +2,7 @@ use proxy_wasm::traits::*;
 use proxy_wasm::types::*;
 
 use crate::recorder::{build_evidence, infer_side_effect_class};
-use aep_core::recording::{RiskContext, SideEffectClass};
+use aep_core::recording::RiskContext;
 
 pub struct EvidenceFilter {
     context_id: u32,

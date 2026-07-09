@@ -26,7 +26,7 @@ cargo fmt --all -- --check
 
 ## Wasm build
 ```bash
-cargo build --target wasm32-wasi --release
+cargo build --target wasm32-wasip1 --release
 ```
 
 ## Code structure
@@ -42,5 +42,5 @@ benchmarks/             — performance benchmarks
 - All new code must have unit tests
 - Use `cargo clippy` clean (no warnings)
 - Do not add unsafe code without a documented safety comment
-- WASM target is wasm32-wasi — avoid OS-specific dependencies
+- WASM target is wasm32-wasip1 — avoid OS-specific dependencies
 - The verify command is: `cargo test --workspace`
