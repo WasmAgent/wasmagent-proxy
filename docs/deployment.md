@@ -92,13 +92,16 @@ envoy -c deploy/envoy/envoy.yaml
 curl -v http://localhost:8080/api/data
 
 # Look for the response header:
-#   < x-aep-recording-mode: Validation
+#   < x-aep-recording-mode: validation
 
 # Mutation request → should get "full" mode
 curl -v -X POST http://localhost:8080/api/users
 
 # Look for:
-#   < x-aep-recording-mode: Full
+#   < x-aep-recording-mode: full
+
+# The header value mirrors the RecordingMode enum's snake_case serialization
+# ("validation" | "delta" | "full"), matching the recording_mode field in AEP records.
 ```
 
 ## Istio WasmPlugin
