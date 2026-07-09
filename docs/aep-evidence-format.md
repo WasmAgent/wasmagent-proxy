@@ -142,7 +142,7 @@ header. This links their evidence into a single causal chain.
 ```
 Gateway (wasmagent-proxy):          Process-internal (wasmagent-js):
   POST /api/payments                 tool_call: "charge_card"
-  x-aep-recording-mode: Full         capability_decision: allow
+  x-aep-recording-mode: full         capability_decision: allow
   side_effect_class: MutateExternal  precondition: {amount: 100}
                                      result: {tx_id: "xyz"}
 ```
