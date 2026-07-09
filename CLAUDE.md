@@ -49,6 +49,21 @@ PATH=/root/.cargo/bin:$PATH cargo clippy --workspace -- -D warnings
 - All new code must have unit tests
 - Do not use doc-tests — they fail due to rustdoc PATH issue on VPS
 
+
+## Key references — no docs/ directory
+
+| Reference | What it covers |
+|-----------|---------------|
+| `README.md` | Architecture, Proxy-Wasm design, configuration fields |
+| `crates/aep-core/src/lib.rs` | RecordingMode, ActionEvidence types — the core contract |
+| `crates/proxy-wasm-evidence/src/filter.rs` | EvidenceFilter — the Wasm HTTP context |
+| `crates/proxy-wasm-evidence/src/recorder.rs` | Recording policy implementation |
+| `deploy/envoy/envoy.yaml` | Envoy filter chain config reference |
+| `deploy/istio/wasmplugin.yaml` | Istio WasmPlugin config reference |
+
+Read README.md first, then the specific crate source for the component
+you are modifying. Tests are co-located with source (lib.rs #[cfg(test)]).
+
 ## Current status
 
 ### Completed ✅
