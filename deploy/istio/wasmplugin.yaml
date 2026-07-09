@@ -1,3 +1,6 @@
+# Istio WasmPlugin that attaches the wasmagent-proxy evidence filter to a workload.
+# Deploy with: kubectl apply -f deploy/istio/wasmplugin.yaml
+# Selector configuration and mesh verification: see docs/deployment.md → "Istio WasmPlugin".
 apiVersion: extensions.istio.io/v1alpha1
 kind: WasmPlugin
 metadata:
