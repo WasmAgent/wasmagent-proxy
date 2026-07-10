@@ -8,6 +8,21 @@ pub enum RecordingMode {
     Full,
 }
 
+impl RecordingMode {
+    /// Wire-format identifier for this mode: the snake_case form serialized into
+    /// AEP records (see the `serde(rename_all = "snake_case")` above) and emitted
+    /// as the value of the gateway's `x-aep-recording-mode` response header.
+    /// `recording_mode_as_str_matches_serde` pins this to the serde output so the
+    /// two cannot drift.
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            RecordingMode::Validation => "validation",
+            RecordingMode::Delta => "delta",
+            RecordingMode::Full => "full",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SideEffectClass {
@@ -84,5 +99,20 @@ mod tests {
         let mut c = ctx(SideEffectClass::Read);
         c.was_vetted = true;
         assert_eq!(compile_recording_policy(&c).mode, RecordingMode::Full);
+    }
+
+    #[test]
+    fn recording_mode_as_str_matches_serde() {
+        for mode in [RecordingMode::Validation, RecordingMode::Delta, RecordingMode::Full] {
+            let serde_str = serde_json::to_string(&mode)
+                .unwrap()
+                .trim_matches('"')
+                .to_string();
+            assert_eq!(
+                mode.as_str(),
+                serde_str,
+                "as_str drifted from serde serialization"
+            );
+        }
     }
 }

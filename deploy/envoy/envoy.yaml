@@ -1,3 +1,6 @@
+# Envoy static config that loads the wasmagent-proxy evidence filter.
+# Full quickstart — build the .wasm, place it, verify the x-aep-recording-mode
+# response header: see docs/deployment.md.
 static_resources:
   listeners:
     - name: listener_0

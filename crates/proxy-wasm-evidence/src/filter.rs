@@ -46,8 +46,12 @@ impl HttpContext for EvidenceFilter {
         let action_id = format!("ctx-{}", self.context_id);
         let tool_name = format!("{} {}", self.method, self.path);
         let evidence = build_evidence(action_id, tool_name, &risk_ctx, 0, None);
-        let mode = format!("{:?}", evidence.recording_mode);
-        self.set_http_response_header("x-aep-recording-mode", Some(&mode));
+        // Emit the canonical snake_case form (matching the `recording_mode` field
+        // serialized into AEP records) rather than the Debug-format PascalCase.
+        self.set_http_response_header(
+            "x-aep-recording-mode",
+            Some(evidence.recording_mode.as_str()),
+        );
         Action::Continue
     }
 }

@@ -50,19 +50,26 @@ PATH=/root/.cargo/bin:$PATH cargo clippy --workspace -- -D warnings
 - Do not use doc-tests — they fail due to rustdoc PATH issue on VPS
 
 
-## Key references — no docs/ directory
+## Key references
+
+Detailed documentation lives under `docs/` (see issue #14):
 
 | Reference | What it covers |
 |-----------|---------------|
 | `README.md` | Architecture, Proxy-Wasm design, configuration fields |
+| `docs/architecture.md` | System diagram, component responsibilities, AEP recording flow, Ed25519 signing |
+| `docs/deployment.md` | Envoy/Istio quickstart, K8s secret injection walkthrough |
+| `docs/configuration.md` | All config fields with types, defaults, and examples |
+| `docs/aep-evidence-format.md` | AEP record structure, side-effect classification, DSSE envelope |
 | `crates/aep-core/src/lib.rs` | RecordingMode, ActionEvidence types — the core contract |
 | `crates/proxy-wasm-evidence/src/filter.rs` | EvidenceFilter — the Wasm HTTP context |
 | `crates/proxy-wasm-evidence/src/recorder.rs` | Recording policy implementation |
 | `deploy/envoy/envoy.yaml` | Envoy filter chain config reference |
 | `deploy/istio/wasmplugin.yaml` | Istio WasmPlugin config reference |
 
-Read README.md first, then the specific crate source for the component
-you are modifying. Tests are co-located with source (lib.rs #[cfg(test)]).
+Read README.md first, then `docs/` for the relevant area, then the
+specific crate source for the component you are modifying. Tests are
+co-located with source (lib.rs #[cfg(test)]).
 
 ## Current status
 
