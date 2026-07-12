@@ -6,9 +6,7 @@ use proxy_wasm::traits::*;
 #[cfg(target_arch = "wasm32")]
 use proxy_wasm::types::*;
 
-#[cfg(target_arch = "wasm32")]
 use crate::recorder::{build_evidence, infer_side_effect_class};
-#[cfg(target_arch = "wasm32")]
 use aep_core::recording::RiskContext;
 
 pub struct EvidenceFilter {
@@ -31,6 +29,29 @@ impl EvidenceFilter {
     }
 }
 
+/// Pure, host-call-free computation of the value the filter would emit for the
+/// `x-aep-recording-mode` response header for a given request.
+///
+/// Extracted from `on_http_response_headers` so the classify → recording-policy
+/// → header-value pipeline is unit-testable on the native target, which cannot
+/// link the proxy-wasm host imports that the `HttpContext` trait methods rely
+/// on. The Wasm path delegates here so the two cannot drift.
+pub fn recording_mode_for_request(method: &str, path: &str, context_id: u32) -> String {
+    let side_effect_class = infer_side_effect_class(method, path);
+    let risk_ctx = RiskContext {
+        was_vetted: false,
+        has_consent_anomaly: false,
+        taint_chain_length: 0,
+        side_effect_class,
+    };
+    let action_id = format!("ctx-{}", context_id);
+    let tool_name = format!("{} {}", method, path);
+    let evidence = build_evidence(action_id, tool_name, &risk_ctx, 0, None);
+    // Canonical snake_case form matching the `recording_mode` field serialized
+    // into AEP records, rather than the Debug-format PascalCase.
+    evidence.recording_mode.as_str().to_string()
+}
+
 #[cfg(target_arch = "wasm32")]
 impl Context for EvidenceFilter {}
 
@@ -45,22 +66,8 @@ impl HttpContext for EvidenceFilter {
     }
 
     fn on_http_response_headers(&mut self, _num_headers: usize, _end_of_stream: bool) -> Action {
-        let side_effect_class = infer_side_effect_class(&self.method, &self.path);
-        let risk_ctx = RiskContext {
-            was_vetted: false,
-            has_consent_anomaly: false,
-            taint_chain_length: 0,
-            side_effect_class,
-        };
-        let action_id = format!("ctx-{}", self.context_id);
-        let tool_name = format!("{} {}", self.method, self.path);
-        let evidence = build_evidence(action_id, tool_name, &risk_ctx, 0, None);
-        // Emit the canonical snake_case form (matching the `recording_mode` field
-        // serialized into AEP records) rather than the Debug-format PascalCase.
-        self.set_http_response_header(
-            "x-aep-recording-mode",
-            Some(evidence.recording_mode.as_str()),
-        );
+        let header_value = recording_mode_for_request(&self.method, &self.path, self.context_id);
+        self.set_http_response_header("x-aep-recording-mode", Some(&header_value));
         Action::Continue
     }
 }
@@ -97,5 +104,33 @@ mod tests {
         assert_eq!(filter.path, "/api/v1/data");
         assert_eq!(filter.trace_id.as_deref(), Some("trace-abc"));
         assert_eq!(filter.agent_id.as_deref(), Some("agent-007"));
+    }
+
+    #[test]
+    fn recording_mode_for_read_request_is_validation() {
+        // Exercises the on_http_response_headers pipeline end-to-end on the
+        // native target: GET → SideEffectClass::Read → Validation mode.
+        assert_eq!(
+            recording_mode_for_request("GET", "/api/v1/data", 9),
+            "validation"
+        );
+    }
+
+    #[test]
+    fn recording_mode_for_external_mutation_is_full() {
+        // POST to a non-network path → MutateExternal → Full recording.
+        assert_eq!(
+            recording_mode_for_request("POST", "/api/v1/users", 3),
+            "full"
+        );
+    }
+
+    #[test]
+    fn recording_mode_for_network_egress_is_full() {
+        // POST to a /network/ path → NetworkEgress → Full recording.
+        assert_eq!(
+            recording_mode_for_request("POST", "/network/peers", 5),
+            "full"
+        );
     }
 }

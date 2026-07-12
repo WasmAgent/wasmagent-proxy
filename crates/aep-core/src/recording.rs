@@ -140,6 +140,64 @@ mod tests {
     }
 
     #[test]
+    fn consent_anomaly_yields_full_even_for_read() {
+        // has_consent_anomaly is evaluated before the read short-circuit, so an
+        // anomaly forces Full recording even for an otherwise read-only call.
+        let mut c = ctx(SideEffectClass::Read);
+        c.has_consent_anomaly = true;
+        let policy = compile_recording_policy(&c);
+        assert_eq!(policy.mode, RecordingMode::Full);
+        assert_eq!(policy.reason, "consent anomaly recorded");
+    }
+
+    #[test]
+    fn tainted_input_reaching_state_changing_call_yields_full() {
+        // taint_chain_length > 0 combined with a non-Read side effect forces
+        // Full recording (tainted input reaching a state-changing call).
+        let mut c = ctx(SideEffectClass::MutateLocal);
+        c.taint_chain_length = 3;
+        let policy = compile_recording_policy(&c);
+        assert_eq!(policy.mode, RecordingMode::Full);
+        assert_eq!(policy.reason, "tainted input reaching state-changing call");
+    }
+
+    #[test]
+    fn taint_chain_does_not_upgrade_pure_reads() {
+        // Taint only matters when paired with a state-changing call; a tainted
+        // read cannot propagate the taint into state, so it stays Validation.
+        let mut c = ctx(SideEffectClass::Read);
+        c.taint_chain_length = 5;
+        assert_eq!(compile_recording_policy(&c).mode, RecordingMode::Validation);
+    }
+
+    #[test]
+    fn mutate_external_yields_full() {
+        assert_eq!(
+            compile_recording_policy(&ctx(SideEffectClass::MutateExternal)).mode,
+            RecordingMode::Full
+        );
+    }
+
+    #[test]
+    fn unknown_side_effect_yields_full() {
+        let policy = compile_recording_policy(&ctx(SideEffectClass::Unknown));
+        assert_eq!(policy.mode, RecordingMode::Full);
+        assert_eq!(policy.reason, "unknown side-effect class");
+    }
+
+    #[test]
+    fn vetting_takes_priority_over_consent_anomaly() {
+        // was_vetted is the first decision branch, so it wins even when a
+        // consent anomaly is also present — pinning the decision priority.
+        let mut c = ctx(SideEffectClass::Read);
+        c.was_vetted = true;
+        c.has_consent_anomaly = true;
+        let policy = compile_recording_policy(&c);
+        assert_eq!(policy.mode, RecordingMode::Full);
+        assert_eq!(policy.reason, "tool flagged by vetting");
+    }
+
+    #[test]
     fn recording_mode_as_str_matches_serde() {
         for mode in [
             RecordingMode::Validation,
