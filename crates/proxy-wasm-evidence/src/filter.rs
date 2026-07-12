@@ -6,7 +6,9 @@ use proxy_wasm::traits::*;
 #[cfg(target_arch = "wasm32")]
 use proxy_wasm::types::*;
 
+#[cfg(target_arch = "wasm32")]
 use crate::recorder::{build_evidence, infer_side_effect_class};
+#[cfg(target_arch = "wasm32")]
 use aep_core::recording::RiskContext;
 
 pub struct EvidenceFilter {
