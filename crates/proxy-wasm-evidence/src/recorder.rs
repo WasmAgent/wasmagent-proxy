@@ -5,14 +5,28 @@ use aep_core::{
 
 /// Infer SideEffectClass from HTTP method + path heuristics.
 /// In a real deployment, callers can set x-aep-side-effect-class header to override.
+///
+/// Classification rules:
+/// - GET/HEAD/OPTIONS                → Read
+/// - POST/PUT/PATCH (normal paths)  → MutateLocal   (local state change)
+/// - DELETE (normal paths)          → MutateExternal (destructive, external impact)
+/// - any mutation to /network/ or /webhook paths → NetworkEgress
+/// - any method not recognised       → Unknown
 pub fn infer_side_effect_class(method: &str, path: &str) -> SideEffectClass {
     match method.to_uppercase().as_str() {
         "GET" | "HEAD" | "OPTIONS" => SideEffectClass::Read,
-        "POST" | "PUT" | "PATCH" | "DELETE" => {
+        "DELETE" => {
             if path.contains("/network/") || path.contains("/webhook") {
                 SideEffectClass::NetworkEgress
             } else {
                 SideEffectClass::MutateExternal
+            }
+        }
+        "POST" | "PUT" | "PATCH" => {
+            if path.contains("/network/") || path.contains("/webhook") {
+                SideEffectClass::NetworkEgress
+            } else {
+                SideEffectClass::MutateLocal
             }
         }
         _ => SideEffectClass::Unknown,
@@ -63,15 +77,25 @@ mod tests {
     }
 
     #[test]
-    fn classifies_external_mutations() {
-        assert_eq!(infer_side_effect_class("POST", "/users"), SideEffectClass::MutateExternal);
+    fn classifies_mutate_local_for_post_put_patch() {
+        // POST/PUT/PATCH on normal paths → MutateLocal (not MutateExternal)
+        assert_eq!(infer_side_effect_class("POST", "/users"), SideEffectClass::MutateLocal);
+        assert_eq!(infer_side_effect_class("PUT", "/users/42"), SideEffectClass::MutateLocal);
+        assert_eq!(infer_side_effect_class("PATCH", "/settings/profile"), SideEffectClass::MutateLocal);
+    }
+
+    #[test]
+    fn classifies_delete_as_mutate_external() {
+        // DELETE is destructive → MutateExternal
         assert_eq!(infer_side_effect_class("DELETE", "/users/42"), SideEffectClass::MutateExternal);
     }
 
     #[test]
-    fn classifies_network_egress_by_path() {
+    fn classifies_network_egress_from_mutation_paths() {
+        // Both mutation and delete to network/webhook paths → NetworkEgress
         assert_eq!(infer_side_effect_class("POST", "/network/peers"), SideEffectClass::NetworkEgress);
         assert_eq!(infer_side_effect_class("PUT", "/v1/webhook/xyz"), SideEffectClass::NetworkEgress);
+        assert_eq!(infer_side_effect_class("DELETE", "/network/peers/42"), SideEffectClass::NetworkEgress);
     }
 
     #[test]
@@ -104,7 +128,7 @@ mod tests {
         let digest = "sha256:abc".to_string();
         let ev = build_evidence(
             "ctx-2".into(),
-            "POST /payments".into(),
+            "DELETE /users/42".into(),
             &risk(SideEffectClass::MutateExternal),
             42,
             Some(digest.clone()),
@@ -112,5 +136,56 @@ mod tests {
         assert!(ev.state_changing);
         assert_eq!(ev.recording_mode, RecordingMode::Full);
         assert_eq!(ev.precondition_digest.as_deref(), Some(digest.as_str()));
+    }
+
+    #[test]
+    fn post_to_normal_path_yields_mutate_local_then_delta() {
+        // End-to-end: POST /users classifies as MutateLocal → build_evidence records Delta
+        let class = infer_side_effect_class("POST", "/users");
+        assert_eq!(class, SideEffectClass::MutateLocal);
+
+        let ev = build_evidence(
+            "ctx-3".into(),
+            "POST /users".into(),
+            &risk(class),
+            100,
+            None,
+        );
+        assert!(ev.state_changing);
+        assert_eq!(ev.recording_mode, RecordingMode::Delta);
+    }
+
+    #[test]
+    fn get_yields_read_then_validation() {
+        // End-to-end: GET /items classifies as Read → build_evidence records Validation
+        let class = infer_side_effect_class("GET", "/items");
+        assert_eq!(class, SideEffectClass::Read);
+
+        let ev = build_evidence(
+            "ctx-4".into(),
+            "GET /items".into(),
+            &risk(class),
+            200,
+            None,
+        );
+        assert!(!ev.state_changing);
+        assert_eq!(ev.recording_mode, RecordingMode::Validation);
+    }
+
+    #[test]
+    fn post_to_webhook_yields_network_egress_then_full() {
+        // End-to-end: POST /webhook classifies as NetworkEgress → Full
+        let class = infer_side_effect_class("POST", "/api/v1/webhook/hook1");
+        assert_eq!(class, SideEffectClass::NetworkEgress);
+
+        let ev = build_evidence(
+            "ctx-5".into(),
+            "POST /api/v1/webhook/hook1".into(),
+            &risk(class),
+            300,
+            None,
+        );
+        assert!(ev.state_changing);
+        assert_eq!(ev.recording_mode, RecordingMode::Full);
     }
 }
