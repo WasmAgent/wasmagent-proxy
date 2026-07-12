@@ -58,25 +58,43 @@ mod tests {
     #[test]
     fn classifies_read_methods() {
         for method in ["GET", "head", "OpTiOnS"] {
-            assert_eq!(infer_side_effect_class(method, "/anything"), SideEffectClass::Read);
+            assert_eq!(
+                infer_side_effect_class(method, "/anything"),
+                SideEffectClass::Read
+            );
         }
     }
 
     #[test]
     fn classifies_external_mutations() {
-        assert_eq!(infer_side_effect_class("POST", "/users"), SideEffectClass::MutateExternal);
-        assert_eq!(infer_side_effect_class("DELETE", "/users/42"), SideEffectClass::MutateExternal);
+        assert_eq!(
+            infer_side_effect_class("POST", "/users"),
+            SideEffectClass::MutateExternal
+        );
+        assert_eq!(
+            infer_side_effect_class("DELETE", "/users/42"),
+            SideEffectClass::MutateExternal
+        );
     }
 
     #[test]
     fn classifies_network_egress_by_path() {
-        assert_eq!(infer_side_effect_class("POST", "/network/peers"), SideEffectClass::NetworkEgress);
-        assert_eq!(infer_side_effect_class("PUT", "/v1/webhook/xyz"), SideEffectClass::NetworkEgress);
+        assert_eq!(
+            infer_side_effect_class("POST", "/network/peers"),
+            SideEffectClass::NetworkEgress
+        );
+        assert_eq!(
+            infer_side_effect_class("PUT", "/v1/webhook/xyz"),
+            SideEffectClass::NetworkEgress
+        );
     }
 
     #[test]
     fn classifies_unknown_methods() {
-        assert_eq!(infer_side_effect_class("PROPFIND", "/"), SideEffectClass::Unknown);
+        assert_eq!(
+            infer_side_effect_class("PROPFIND", "/"),
+            SideEffectClass::Unknown
+        );
         assert_eq!(infer_side_effect_class("", ""), SideEffectClass::Unknown);
     }
 

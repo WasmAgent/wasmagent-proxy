@@ -1,6 +1,6 @@
+use crate::evidence::AepRecord;
 use ed25519_dalek::{Signer, SigningKey as DalekSigningKey, VerifyingKey};
 use sha2::{Digest, Sha256};
-use crate::evidence::AepRecord;
 
 pub use ed25519_dalek::SigningKey;
 
@@ -15,9 +15,15 @@ pub fn sign_record(record: &mut AepRecord, key: &DalekSigningKey, key_id: &str) 
 }
 
 pub fn verify_record(record: &AepRecord, verifying_key: &VerifyingKey) -> bool {
-    let Some(sig_meta) = &record.signature else { return false };
-    let Ok(sig_bytes) = hex::decode(&sig_meta.sig) else { return false };
-    let Ok(sig_array) = sig_bytes.try_into() else { return false };
+    let Some(sig_meta) = &record.signature else {
+        return false;
+    };
+    let Ok(sig_bytes) = hex::decode(&sig_meta.sig) else {
+        return false;
+    };
+    let Ok(sig_array) = sig_bytes.try_into() else {
+        return false;
+    };
     let sig = ed25519_dalek::Signature::from_bytes(&sig_array);
     let mut unsigned = record.clone();
     unsigned.signature = None;
