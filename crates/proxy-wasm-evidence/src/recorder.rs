@@ -5,8 +5,10 @@ use aep_core::{
 
 /// Infer [`SideEffectClass`] from HTTP method + path heuristics.
 ///
-/// This is the gateway-level default classifier. In a real deployment, callers can
-/// override via the `x-aep-side-effect-class` request header.
+/// This is the gateway-level default (heuristic) classifier. It does **not**
+/// consult the `x-aep-side-effect-class` request header — use
+/// [`resolve_side_effect_class`] for the entry point that honors a
+/// caller-supplied override.
 ///
 /// # Design rationale (issue #23)
 ///
@@ -53,6 +55,49 @@ pub fn infer_side_effect_class(method: &str, path: &str) -> SideEffectClass {
     }
 }
 
+/// Resolve the effective [`SideEffectClass`] for a request, honoring an explicit
+/// caller-supplied override from the `x-aep-side-effect-class` request header.
+///
+/// The gateway's method/path heuristics ([`infer_side_effect_class`]) are a
+/// conservative default. Some deployments carry high-volume traffic that the
+/// heuristic would capture in full — for example internal mesh control-plane
+/// calls on `/network/…` paths classify as [`SideEffectClass::NetworkEgress`]
+/// and thus record in full (`RecordingMode::Full`). To avoid storage exhaustion
+/// on such traffic, an operator (or an upstream L7 policy) may pin a specific
+/// class for a request via the override header, superseding the heuristic.
+///
+/// Accepted values are the snake_case forms used in AEP records (`read`,
+/// `mutate_local`, `mutate_external`, `network_egress`, `unknown`); kebab-case
+/// and any ASCII casing are also accepted because the value travels in an HTTP
+/// header. An unrecognized value is ignored and the heuristic is used, so a
+/// malformed override never breaks the request.
+pub fn resolve_side_effect_class(
+    override_header: Option<&str>,
+    method: &str,
+    path: &str,
+) -> SideEffectClass {
+    if let Some(raw) = override_header {
+        let normalized = raw.trim().to_lowercase().replace('-', "_");
+        match normalized.as_str() {
+            "read" => return SideEffectClass::Read,
+            "mutate_local" => return SideEffectClass::MutateLocal,
+            "mutate_external" => return SideEffectClass::MutateExternal,
+            "network_egress" => return SideEffectClass::NetworkEgress,
+            "unknown" => return SideEffectClass::Unknown,
+            _ => {}
+        }
+    }
+    infer_side_effect_class(method, path)
+}
+
+/// Build an [`ActionEvidence`] record for a single proxied action.
+///
+/// `state_changing` is a coarse read-vs-mutate summary (`false` only for
+/// [`SideEffectClass::Read`]); it is intentionally not a per-method flag. The
+/// full method and path are preserved verbatim in `tool_name`, and the recording
+/// granularity (`validation` / `delta` / `full`) is preserved in `recording_mode`,
+/// so downstream consumers that need to distinguish e.g. GET from POST read both
+/// fields rather than relying on `state_changing` alone.
 pub fn build_evidence(
     action_id: String,
     tool_name: String,
@@ -228,5 +273,109 @@ mod tests {
         );
         assert!(ev.state_changing);
         assert_eq!(ev.recording_mode, RecordingMode::Full);
+    }
+
+    #[test]
+    fn state_changing_flag_distinguishes_read_from_mutate() {
+        // Review finding #1: `state_changing` is a coarse read-vs-mutate flag by
+        // design — GET (Read) is false, POST (MutateLocal) is true. The full method
+        // is retained in `tool_name` and the recording granularity in
+        // `recording_mode`, so GET-vs-POST is not silently dropped.
+        let get_ev = build_evidence(
+            "get".into(),
+            "GET /items".into(),
+            &risk(SideEffectClass::Read),
+            0,
+            None,
+        );
+        let post_ev = build_evidence(
+            "post".into(),
+            "POST /items".into(),
+            &risk(SideEffectClass::MutateLocal),
+            0,
+            None,
+        );
+        assert!(!get_ev.state_changing);
+        assert!(post_ev.state_changing);
+        assert_eq!(get_ev.tool_name, "GET /items");
+        assert_eq!(post_ev.tool_name, "POST /items");
+        assert_eq!(get_ev.recording_mode, RecordingMode::Validation);
+        assert_eq!(post_ev.recording_mode, RecordingMode::Delta);
+    }
+
+    #[test]
+    fn unknown_method_is_fail_closed_to_full_capture() {
+        // Review finding #2: an unrecognized method (e.g. WebDAV PROPFIND) classifies
+        // as Unknown and intentionally records in Full. An evidence system fails
+        // closed (over-record) when it cannot classify a request rather than
+        // risking under-recording.
+        let class = infer_side_effect_class("PROPFIND", "/");
+        assert_eq!(class, SideEffectClass::Unknown);
+        let ev = build_evidence(
+            "propfind".into(),
+            "PROPFIND /".into(),
+            &risk(class),
+            0,
+            None,
+        );
+        assert!(ev.state_changing);
+        assert_eq!(ev.recording_mode, RecordingMode::Full);
+    }
+
+    #[test]
+    fn override_header_downgrades_network_path_to_mutate_local() {
+        // Review finding #3: high-volume internal traffic on `/network/…` paths
+        // would otherwise be captured in full. An operator can set the
+        // `x-aep-side-effect-class` override header to pin a cheaper class for
+        // that request, avoiding storage exhaustion.
+        assert_eq!(
+            resolve_side_effect_class(Some("mutate_local"), "POST", "/network/peers"),
+            SideEffectClass::MutateLocal,
+        );
+        // End-to-end: the override yields Delta (not Full) evidence.
+        let ev = build_evidence(
+            "override".into(),
+            "POST /network/peers".into(),
+            &risk(SideEffectClass::MutateLocal),
+            1,
+            None,
+        );
+        assert_eq!(ev.recording_mode, RecordingMode::Delta);
+    }
+
+    #[test]
+    fn override_header_accepts_case_and_separator_variants() {
+        // The override travels in an HTTP header — accept kebab-case and any casing.
+        assert_eq!(
+            resolve_side_effect_class(Some("MUTATE-EXTERNAL"), "GET", "/x"),
+            SideEffectClass::MutateExternal,
+        );
+        assert_eq!(
+            resolve_side_effect_class(Some("  Network_Egress "), "GET", "/x"),
+            SideEffectClass::NetworkEgress,
+        );
+        assert_eq!(
+            resolve_side_effect_class(Some("READ"), "POST", "/users"),
+            SideEffectClass::Read,
+        );
+    }
+
+    #[test]
+    fn unrecognized_or_absent_override_falls_back_to_heuristic() {
+        // Absent override → heuristic (POST /network/peers → NetworkEgress).
+        assert_eq!(
+            resolve_side_effect_class(None, "POST", "/network/peers"),
+            SideEffectClass::NetworkEgress,
+        );
+        // Garbage override → heuristic, never breaks the request.
+        assert_eq!(
+            resolve_side_effect_class(Some("nonsense"), "POST", "/network/peers"),
+            SideEffectClass::NetworkEgress,
+        );
+        // Override is all-or-nothing: a value with trailing junk does not parse.
+        assert_eq!(
+            resolve_side_effect_class(Some("read please"), "POST", "/users"),
+            SideEffectClass::MutateLocal,
+        );
     }
 }
