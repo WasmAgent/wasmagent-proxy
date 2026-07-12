@@ -3,15 +3,35 @@ use aep_core::{
     recording::{compile_recording_policy, RiskContext, SideEffectClass},
 };
 
-/// Infer SideEffectClass from HTTP method + path heuristics.
-/// In a real deployment, callers can set x-aep-side-effect-class header to override.
+/// Infer [`SideEffectClass`] from HTTP method + path heuristics.
 ///
-/// Classification rules:
-/// - GET/HEAD/OPTIONS                → Read
-/// - POST/PUT/PATCH (normal paths)  → MutateLocal   (local state change)
-/// - DELETE (normal paths)          → MutateExternal (destructive, external impact)
-/// - any mutation to /network/ or /webhook paths → NetworkEgress
-/// - any method not recognised       → Unknown
+/// This is the gateway-level default classifier. In a real deployment, callers can
+/// override via the `x-aep-side-effect-class` request header.
+///
+/// # Design rationale (issue #23)
+///
+/// The previous implementation mapped every mutation method (POST/PUT/PATCH/DELETE) to
+/// [`SideEffectClass::MutateExternal`], which unconditionally produced
+/// [`RecordingMode::Full`] (full request/response capture). This was overly
+/// conservative for the common case: a gateway proxy intercepting standard CRUD
+/// traffic where the mutation target is the service's own data store — a **local**
+/// state change from the gateway's perspective.
+///
+/// By classifying normal-path POST/PUT/PATCH as [`SideEffectClass::MutateLocal`] we
+/// get [`RecordingMode::Delta`] (state-diff evidence), which is sufficient for
+/// auditability while avoiding the storage and latency cost of full capture on every
+/// write. [`MutateExternal`] → Full is reserved for genuinely destructive operations
+/// (DELETE) and confirmed external calls (network/webhook paths).
+///
+/// # Classification rules
+///
+/// | Method                         | Path              | Class            | Recording |
+/// |--------------------------------|-------------------|------------------|-----------|
+/// | GET / HEAD / OPTIONS          | any               | `Read`           | Validation |
+/// | POST / PUT / PATCH            | normal            | `MutateLocal`    | Delta     |
+/// | DELETE                         | normal            | `MutateExternal` | Full      |
+/// | any mutation (POST/PUT/PATCH/DELETE) | `/network/…` or `…/webhook…` | `NetworkEgress` | Full      |
+/// | other                          | any               | `Unknown`        | Full      |
 pub fn infer_side_effect_class(method: &str, path: &str) -> SideEffectClass {
     match method.to_uppercase().as_str() {
         "GET" | "HEAD" | "OPTIONS" => SideEffectClass::Read,
@@ -72,35 +92,62 @@ mod tests {
     #[test]
     fn classifies_read_methods() {
         for method in ["GET", "head", "OpTiOnS"] {
-            assert_eq!(infer_side_effect_class(method, "/anything"), SideEffectClass::Read);
+            assert_eq!(
+                infer_side_effect_class(method, "/anything"),
+                SideEffectClass::Read
+            );
         }
     }
 
     #[test]
     fn classifies_mutate_local_for_post_put_patch() {
         // POST/PUT/PATCH on normal paths → MutateLocal (not MutateExternal)
-        assert_eq!(infer_side_effect_class("POST", "/users"), SideEffectClass::MutateLocal);
-        assert_eq!(infer_side_effect_class("PUT", "/users/42"), SideEffectClass::MutateLocal);
-        assert_eq!(infer_side_effect_class("PATCH", "/settings/profile"), SideEffectClass::MutateLocal);
+        assert_eq!(
+            infer_side_effect_class("POST", "/users"),
+            SideEffectClass::MutateLocal
+        );
+        assert_eq!(
+            infer_side_effect_class("PUT", "/users/42"),
+            SideEffectClass::MutateLocal
+        );
+        assert_eq!(
+            infer_side_effect_class("PATCH", "/settings/profile"),
+            SideEffectClass::MutateLocal
+        );
     }
 
     #[test]
     fn classifies_delete_as_mutate_external() {
         // DELETE is destructive → MutateExternal
-        assert_eq!(infer_side_effect_class("DELETE", "/users/42"), SideEffectClass::MutateExternal);
+        assert_eq!(
+            infer_side_effect_class("DELETE", "/users/42"),
+            SideEffectClass::MutateExternal
+        );
     }
 
     #[test]
     fn classifies_network_egress_from_mutation_paths() {
         // Both mutation and delete to network/webhook paths → NetworkEgress
-        assert_eq!(infer_side_effect_class("POST", "/network/peers"), SideEffectClass::NetworkEgress);
-        assert_eq!(infer_side_effect_class("PUT", "/v1/webhook/xyz"), SideEffectClass::NetworkEgress);
-        assert_eq!(infer_side_effect_class("DELETE", "/network/peers/42"), SideEffectClass::NetworkEgress);
+        assert_eq!(
+            infer_side_effect_class("POST", "/network/peers"),
+            SideEffectClass::NetworkEgress
+        );
+        assert_eq!(
+            infer_side_effect_class("PUT", "/v1/webhook/xyz"),
+            SideEffectClass::NetworkEgress
+        );
+        assert_eq!(
+            infer_side_effect_class("DELETE", "/network/peers/42"),
+            SideEffectClass::NetworkEgress
+        );
     }
 
     #[test]
     fn classifies_unknown_methods() {
-        assert_eq!(infer_side_effect_class("PROPFIND", "/"), SideEffectClass::Unknown);
+        assert_eq!(
+            infer_side_effect_class("PROPFIND", "/"),
+            SideEffectClass::Unknown
+        );
         assert_eq!(infer_side_effect_class("", ""), SideEffectClass::Unknown);
     }
 
@@ -161,13 +208,7 @@ mod tests {
         let class = infer_side_effect_class("GET", "/items");
         assert_eq!(class, SideEffectClass::Read);
 
-        let ev = build_evidence(
-            "ctx-4".into(),
-            "GET /items".into(),
-            &risk(class),
-            200,
-            None,
-        );
+        let ev = build_evidence("ctx-4".into(), "GET /items".into(), &risk(class), 200, None);
         assert!(!ev.state_changing);
         assert_eq!(ev.recording_mode, RecordingMode::Validation);
     }

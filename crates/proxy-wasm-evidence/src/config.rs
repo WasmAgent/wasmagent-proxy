@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use aep_core::recording::RecordingMode;
+use serde::{Deserialize, Serialize};
 
 /// Configuration loaded from the Wasm plugin's root context (e.g. Istio WasmPlugin spec).
 #[derive(Debug, Clone, Serialize, Deserialize)]

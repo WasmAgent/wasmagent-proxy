@@ -29,7 +29,7 @@ impl Context for EvidenceFilter {}
 impl HttpContext for EvidenceFilter {
     fn on_http_request_headers(&mut self, _num_headers: usize, _end_of_stream: bool) -> Action {
         self.method = self.get_http_request_header(":method").unwrap_or_default();
-        self.path   = self.get_http_request_header(":path").unwrap_or_default();
+        self.path = self.get_http_request_header(":path").unwrap_or_default();
         self.trace_id = self.get_http_request_header("x-b3-traceid");
         self.agent_id = self.get_http_request_header("x-agent-id");
         Action::Continue
