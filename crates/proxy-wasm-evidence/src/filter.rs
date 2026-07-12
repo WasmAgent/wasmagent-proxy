@@ -1,4 +1,9 @@
+// Proxy-Wasm-specific imports are only available when targeting wasm32.
+// On native (including `cargo test`) the struct and its constructor are still
+// compiled so unit tests can verify construction and field-mutation logic.
+#[cfg(target_arch = "wasm32")]
 use proxy_wasm::traits::*;
+#[cfg(target_arch = "wasm32")]
 use proxy_wasm::types::*;
 
 use crate::recorder::{build_evidence, infer_side_effect_class};
@@ -24,8 +29,10 @@ impl EvidenceFilter {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 impl Context for EvidenceFilter {}
 
+#[cfg(target_arch = "wasm32")]
 impl HttpContext for EvidenceFilter {
     fn on_http_request_headers(&mut self, _num_headers: usize, _end_of_stream: bool) -> Action {
         self.method = self.get_http_request_header(":method").unwrap_or_default();
@@ -53,5 +60,40 @@ impl HttpContext for EvidenceFilter {
             Some(evidence.recording_mode.as_str()),
         );
         Action::Continue
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_sets_context_id() {
+        let filter = EvidenceFilter::new(42);
+        assert_eq!(filter.context_id, 42);
+    }
+
+    #[test]
+    fn new_initializes_empty_state() {
+        let filter = EvidenceFilter::new(1);
+        assert!(filter.method.is_empty());
+        assert!(filter.path.is_empty());
+        assert!(filter.trace_id.is_none());
+        assert!(filter.agent_id.is_none());
+    }
+
+    #[test]
+    fn after_request_headers_fields_are_populated() {
+        let mut filter = EvidenceFilter::new(7);
+        // Simulates what on_http_request_headers would do with real headers.
+        filter.method = "POST".into();
+        filter.path = "/api/v1/data".into();
+        filter.trace_id = Some("trace-abc".into());
+        filter.agent_id = Some("agent-007".into());
+
+        assert_eq!(filter.method, "POST");
+        assert_eq!(filter.path, "/api/v1/data");
+        assert_eq!(filter.trace_id.as_deref(), Some("trace-abc"));
+        assert_eq!(filter.agent_id.as_deref(), Some("agent-007"));
     }
 }
