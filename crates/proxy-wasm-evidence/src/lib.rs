@@ -14,11 +14,16 @@
 //! host, the SDK and the HTTP-context entrypoint ([`filter`]) are compiled only
 //! for `wasm32*` targets. The host-agnostic logic ([`config`], [`recorder`]) is
 //! compiled on every target so it can be unit-tested natively.
+//!
+//! The [`filter`] module is additionally compiled during `cargo test` (native)
+//! so that its unit tests can verify struct construction and field-mutation
+//! logic without requiring a Proxy-Wasm host. The HTTP-context trait impls
+//! remain gated to `wasm32*` to avoid undefined-symbol link errors.
 
 pub mod config;
 pub mod recorder;
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(any(target_arch = "wasm32", test))]
 mod filter;
 
 pub use config::PluginConfig;
