@@ -9,7 +9,7 @@ pub struct EvidenceFilter {
     method: String,
     path: String,
     trace_id: Option<String>,
-    agent_id: Option<String>,
+    session_id: Option<String>,
     mcp_header_risk: Option<String>,
 }
 
@@ -20,7 +20,7 @@ impl EvidenceFilter {
             method: String::new(),
             path: String::new(),
             trace_id: None,
-            agent_id: None,
+            session_id: None,
             mcp_header_risk: None,
         }
     }
@@ -32,8 +32,13 @@ impl HttpContext for EvidenceFilter {
     fn on_http_request_headers(&mut self, _num_headers: usize, _end_of_stream: bool) -> Action {
         self.method = self.get_http_request_header(":method").unwrap_or_default();
         self.path   = self.get_http_request_header(":path").unwrap_or_default();
-        self.trace_id = self.get_http_request_header("x-b3-traceid");
-        self.agent_id = self.get_http_request_header("x-agent-id");
+
+        // --- MCP 2026-07-28 trace correlation ---
+        // Check MCP-standard headers first, then fall back to Zipkin B3 / x-agent-id.
+        self.trace_id = self.get_http_request_header("mcp-trace-id")
+            .or_else(|| self.get_http_request_header("x-b3-traceid"));
+        self.session_id = self.get_http_request_header("mcp-session-id")
+            .or_else(|| self.get_http_request_header("x-agent-id"));
 
         // Detect sensitive-data leakage in MCP-specific headers.
         let mcp_method = self.get_http_request_header("MCP-Method");
@@ -55,7 +60,7 @@ impl HttpContext for EvidenceFilter {
         };
         let action_id = format!("ctx-{}", self.context_id);
         let tool_name = format!("{} {}", self.method, self.path);
-        let evidence = build_evidence(
+        let mut evidence = build_evidence(
             action_id,
             tool_name,
             &risk_ctx,
@@ -63,6 +68,10 @@ impl HttpContext for EvidenceFilter {
             None,
             self.mcp_header_risk.clone(),
         );
+        // Populate MCP trace correlation fields.
+        evidence.trace_id = self.trace_id.clone();
+        evidence.session_id = self.session_id.clone();
+
         // Emit the canonical snake_case form (matching the `recording_mode` field
         // serialized into AEP records) rather than the Debug-format PascalCase.
         self.set_http_response_header(
@@ -72,6 +81,13 @@ impl HttpContext for EvidenceFilter {
         // If MCP header risk was detected, expose it as a response header.
         if let Some(ref risk) = self.mcp_header_risk {
             self.set_http_response_header("x-aep-mcp-header-risk", Some(risk.as_str()));
+        }
+        // Emit trace correlation response headers for downstream consumers.
+        if let Some(ref tid) = self.trace_id {
+            self.set_http_response_header("x-aep-trace-id", Some(tid.as_str()));
+        }
+        if let Some(ref sid) = self.session_id {
+            self.set_http_response_header("x-aep-session-id", Some(sid.as_str()));
         }
         Action::Continue
     }

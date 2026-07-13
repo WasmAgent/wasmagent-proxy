@@ -178,6 +178,8 @@ pub fn build_evidence(
         recording_mode: policy.mode,
         capability_decision: None,
         mcp_header_risk,
+        trace_id: None,
+        session_id: None,
     }
 }
 
@@ -239,6 +241,8 @@ mod tests {
         assert!(ev.result_digest.is_none());
         assert!(ev.capability_decision.is_none());
         assert!(ev.mcp_header_risk.is_none());
+        assert!(ev.trace_id.is_none());
+        assert!(ev.session_id.is_none());
     }
 
     #[test]
@@ -255,6 +259,8 @@ mod tests {
         assert!(ev.state_changing);
         assert_eq!(ev.recording_mode, RecordingMode::Full);
         assert_eq!(ev.precondition_digest.as_deref(), Some(digest.as_str()));
+        assert!(ev.trace_id.is_none());
+        assert!(ev.session_id.is_none());
     }
 
     // -----------------------------------------------------------------------
