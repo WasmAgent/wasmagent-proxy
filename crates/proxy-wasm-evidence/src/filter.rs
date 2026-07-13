@@ -31,6 +31,11 @@ use aep_core::recording::RiskContext;
 /// disconnected across independent requests. The `mcp_method`, `mcp_name`,
 /// and `mcp_handle_id` headers provide a more reliable per-request correlation
 /// mechanism aligned with the MCP 2026-07-28 spec.
+///
+/// The filter echoes all MCP correlation headers as `x-aep-*` response headers
+/// so that downstream components (e.g. the wasmagent-js MCP firewall) can
+/// reconstruct a fully correlated `AepRecord` using
+/// [`AepRecord::build_evidence_record`].
 pub struct EvidenceFilter {
     context_id: u32,
     method: String,
@@ -124,11 +129,40 @@ impl HttpContext for EvidenceFilter {
             "x-aep-recording-mode",
             Some(evidence.recording_mode.as_str()),
         );
-        // When an MCP handle ID was received, echo it back so the caller can
-        // correlate this proxy's evidence with downstream tool-call evidence.
+
+        // Propagate MCP 2026-07-28 correlation headers as x-aep-* response
+        // headers so downstream components (e.g. wasmagent-js MCP firewall)
+        // can reconstruct a fully correlated AepRecord using
+        // AepRecord::build_evidence_record.
+        //
+        // Under the stateless/handle-based architecture these fields are the
+        // primary correlation mechanism, taking precedence over trace_id.
+
+        // Echo the handle ID — the primary correlation key under stateless model.
         if let Some(ref handle_id) = self.handle_id {
             self.set_http_response_header("x-aep-handle-id", Some(handle_id));
         }
+        // Echo the MCP protocol version when present.
+        if let Some(ref ver) = self.mcp_protocol_version {
+            self.set_http_response_header("x-aep-mcp-protocol-version", Some(ver));
+        }
+        // Echo the MCP method name when present.
+        if let Some(ref method) = self.mcp_method {
+            self.set_http_response_header("x-aep-mcp-method", Some(method));
+        }
+        // Echo the MCP tool/resource name when present.
+        if let Some(ref name) = self.mcp_name {
+            self.set_http_response_header("x-aep-mcp-name", Some(name));
+        }
+        // Echo the trace ID for downstream correlation when present.
+        if let Some(ref trace_id) = self.trace_id {
+            self.set_http_response_header("x-aep-trace-id", Some(trace_id));
+        }
+        // Echo the agent ID for downstream correlation when present.
+        if let Some(ref agent_id) = self.agent_id {
+            self.set_http_response_header("x-aep-agent-id", Some(agent_id));
+        }
+
         Action::Continue
     }
 }

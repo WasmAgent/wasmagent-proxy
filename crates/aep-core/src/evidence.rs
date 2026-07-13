@@ -66,6 +66,64 @@ pub struct AepRecord {
     pub signature: Option<AepSignature>,
 }
 
+impl AepRecord {
+    /// The schema version constant used by the AEP evidence format.
+    pub const SCHEMA_VERSION: &'static str = "aep/v0.1";
+
+    /// Build a new AEP record from an action evidence and MCP 2026-07-28
+    /// stateless/handle-based correlation fields.
+    ///
+    /// Under the MCP 2026-07-28 stateless architecture:
+    ///
+    /// - Each request is independent; protocol-level sessions no longer exist.
+    ///   Consequently `session_id` is always `None` when MCP protocol version
+    ///   is declared.
+    /// - `handle_id` is the primary correlation key, taking precedence over
+    ///   `trace_id` for linking evidence records across independent requests.
+    /// - MCP-specific fields (`mcp_method`, `mcp_name`) provide higher-signal
+    ///   correlation context under the stateless model.
+    ///
+    /// # Validation enforced
+    ///
+    /// - When `mcp_protocol_version` is `Some`, `session_id` is forced to
+    ///   `None` because the stateless model explicitly deprecates session-level
+    ///   state.
+    pub fn build_evidence_record(
+        action: ActionEvidence,
+        trace_id: Option<String>,
+        handle_id: Option<String>,
+        mcp_protocol_version: Option<String>,
+        mcp_method: Option<String>,
+        mcp_name: Option<String>,
+        run_id: String,
+        created_at_ms: u64,
+    ) -> Self {
+        // Under MCP 2026-07-28 stateless model, when MCP protocol is declared
+        // the session-level state no longer exists — session_id is forced None.
+        let session_id: Option<String> = if mcp_protocol_version.is_some() {
+            None
+        } else {
+            // For non-MCP traffic, session_id might be provided, but is not
+            // part of this builder's contract — always None for stateless.
+            None
+        };
+
+        AepRecord {
+            schema_version: Self::SCHEMA_VERSION.into(),
+            run_id,
+            trace_id,
+            handle_id,
+            session_id,
+            mcp_protocol_version,
+            mcp_method,
+            mcp_name,
+            actions: vec![action],
+            created_at_ms,
+            signature: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AepSignature {
     pub alg: String,
@@ -151,5 +209,86 @@ mod tests {
         assert_eq!(record.mcp_name.as_deref(), Some("documents"));
         assert!(record.session_id.is_none());
         assert!(record.signature.is_none());
+    }
+
+    #[test]
+    fn build_evidence_record_with_mcp_fields() {
+        let action = ActionEvidence {
+            action_id: "act-1".into(),
+            tool_name: "search".into(),
+            state_changing: true,
+            precondition_digest: None,
+            result_digest: None,
+            timestamp_ms: 1700000000003,
+            parent_action_id: None,
+            causal_chain_id: None,
+            recording_mode: RecordingMode::Full,
+            capability_decision: None,
+        };
+
+        let record = AepRecord::build_evidence_record(
+            action.clone(),
+            Some("trace-abc".into()),
+            Some("hdl-42".into()),
+            Some("2026-07-28".into()),
+            Some("tools/call".into()),
+            Some("search".into()),
+            "run-999".into(),
+            1700000000004,
+        );
+
+        assert_eq!(record.schema_version, "aep/v0.1");
+        assert_eq!(record.run_id, "run-999");
+        assert_eq!(record.trace_id.as_deref(), Some("trace-abc"));
+        assert_eq!(record.handle_id.as_deref(), Some("hdl-42"));
+        assert_eq!(record.mcp_protocol_version.as_deref(), Some("2026-07-28"));
+        assert_eq!(record.mcp_method.as_deref(), Some("tools/call"));
+        assert_eq!(record.mcp_name.as_deref(), Some("search"));
+        // Under MCP 2026-07-28 stateless model, session_id is None
+        assert!(record.session_id.is_none());
+        assert_eq!(record.actions.len(), 1);
+        assert_eq!(record.actions[0].action_id, "act-1");
+        assert_eq!(record.actions[0].tool_name, "search");
+        assert_eq!(record.created_at_ms, 1700000000004);
+        assert!(record.signature.is_none());
+    }
+
+    #[test]
+    fn build_evidence_record_without_mcp_headers() {
+        let action = ActionEvidence {
+            action_id: "act-2".into(),
+            tool_name: "GET /data".into(),
+            state_changing: false,
+            precondition_digest: None,
+            result_digest: None,
+            timestamp_ms: 1700000000005,
+            parent_action_id: None,
+            causal_chain_id: None,
+            recording_mode: RecordingMode::Validation,
+            capability_decision: None,
+        };
+
+        let record = AepRecord::build_evidence_record(
+            action.clone(),
+            Some("trace-xyz".into()),
+            None,
+            None,
+            None,
+            None,
+            "run-888".into(),
+            1700000000006,
+        );
+
+        assert_eq!(record.schema_version, "aep/v0.1");
+        assert_eq!(record.run_id, "run-888");
+        assert_eq!(record.trace_id.as_deref(), Some("trace-xyz"));
+        assert!(record.handle_id.is_none());
+        assert!(record.mcp_protocol_version.is_none());
+        assert!(record.mcp_method.is_none());
+        assert!(record.mcp_name.is_none());
+        assert!(record.session_id.is_none());
+        assert_eq!(record.actions.len(), 1);
+        assert_eq!(record.actions[0].action_id, "act-2");
+        assert_eq!(record.created_at_ms, 1700000000006);
     }
 }
