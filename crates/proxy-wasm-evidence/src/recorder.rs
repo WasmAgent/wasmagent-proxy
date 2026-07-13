@@ -142,6 +142,10 @@ pub fn classify_mcp_headers(mcp_method: Option<&str>, mcp_name: Option<&str>) ->
     None
 }
 
+// ---------------------------------------------------------------------------
+// Side-effect classification
+// ---------------------------------------------------------------------------
+
 /// Infer SideEffectClass from HTTP method + path heuristics, with optional
 /// MCP-Method header input (MCP 2026-07-28+ protocol).
 ///
@@ -185,6 +189,10 @@ pub fn infer_side_effect_class_with_mcp(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Evidence builder
+// ---------------------------------------------------------------------------
+
 pub fn build_evidence(
     action_id: String,
     tool_name: String,
@@ -211,6 +219,10 @@ pub fn build_evidence(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -224,6 +236,8 @@ mod tests {
             side_effect_class,
         }
     }
+
+    // -- side-effect classification tests --
 
     #[test]
     fn classifies_read_methods() {
@@ -249,6 +263,8 @@ mod tests {
         assert_eq!(infer_side_effect_class("PROPFIND", "/"), SideEffectClass::Unknown);
         assert_eq!(infer_side_effect_class("", ""), SideEffectClass::Unknown);
     }
+
+    // -- MCP-method-aware side-effect classification tests --
 
     #[test]
     fn mcp_method_tools_call_is_mutate_external() {
@@ -278,81 +294,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn classify_mcp_headers_detects_credential_prefix() {
-        assert_eq!(
-            classify_mcp_headers(Some("ghp_abc123"), None),
-            Some(McpHeaderRisk::CredentialPrefix { header: "MCP-Method", prefix: "ghp_".to_string() })
-        );
-        assert_eq!(
-            classify_mcp_headers(Some("sk-abcdefghij"), None),
-            Some(McpHeaderRisk::CredentialPrefix { header: "MCP-Method", prefix: "sk-".to_string() })
-        );
-        assert_eq!(
-            classify_mcp_headers(Some("Bearer token_here"), None),
-            Some(McpHeaderRisk::CredentialPrefix { header: "MCP-Method", prefix: "Bearer ".to_string() })
-        );
-    }
-
-    #[test]
-    fn classify_mcp_headers_clean_values_return_none() {
-        assert_eq!(classify_mcp_headers(Some("tools/call"), Some("my_tool")), None);
-        assert_eq!(classify_mcp_headers(None, None), None);
-        assert_eq!(classify_mcp_headers(Some("tools/list"), None), None);
-    }
-
-    #[test]
-    fn classify_mcp_headers_detects_pii_in_name() {
-        assert_eq!(
-            classify_mcp_headers(None, Some("user@example.com")),
-            Some(McpHeaderRisk::EmailPattern)
-        );
-    }
-
-    #[test]
-    fn build_evidence_marks_reads_as_non_state_changing() {
-        let ev = build_evidence(
-            "ctx-1".into(),
-            "GET /x".into(),
-            &risk(SideEffectClass::Read),
-            1_700_000_000_000,
-            None,
-            None,
-        );
-        assert!(!ev.state_changing);
-        assert_eq!(ev.recording_mode, RecordingMode::Validation);
-        assert_eq!(ev.action_id, "ctx-1");
-        assert_eq!(ev.tool_name, "GET /x");
-        assert_eq!(ev.timestamp_ms, 1_700_000_000_000);
-        assert!(ev.precondition_digest.is_none());
-        assert!(ev.result_digest.is_none());
-        assert!(ev.capability_decision.is_none());
-        assert!(ev.mcp_header_risk.is_none());
-        assert!(ev.trace_id.is_none());
-        assert!(ev.session_id.is_none());
-    }
-
-    #[test]
-    fn build_evidence_marks_external_mutation_as_state_changing_and_full() {
-        let digest = "sha256:abc".to_string();
-        let ev = build_evidence(
-            "ctx-2".into(),
-            "POST /payments".into(),
-            &risk(SideEffectClass::MutateExternal),
-            42,
-            Some(digest.clone()),
-            None,
-        );
-        assert!(ev.state_changing);
-        assert_eq!(ev.recording_mode, RecordingMode::Full);
-        assert_eq!(ev.precondition_digest.as_deref(), Some(digest.as_str()));
-        assert!(ev.trace_id.is_none());
-        assert!(ev.session_id.is_none());
-    }
-
-    // -----------------------------------------------------------------------
-    // classify_mcp_headers tests
-    // -----------------------------------------------------------------------
+    // -- classify_mcp_headers tests --
 
     #[test]
     fn no_risk_when_headers_absent() {
@@ -362,6 +304,13 @@ mod tests {
     #[test]
     fn no_risk_when_headers_benign() {
         assert_eq!(classify_mcp_headers(Some("tools/list"), Some("my-tool")), None);
+    }
+
+    #[test]
+    fn classify_mcp_headers_clean_values_return_none() {
+        assert_eq!(classify_mcp_headers(Some("tools/call"), Some("my_tool")), None);
+        assert_eq!(classify_mcp_headers(None, None), None);
+        assert_eq!(classify_mcp_headers(Some("tools/list"), None), None);
     }
 
     #[test]
@@ -395,6 +344,22 @@ mod tests {
     }
 
     #[test]
+    fn classify_mcp_headers_detects_credential_prefix() {
+        assert_eq!(
+            classify_mcp_headers(Some("ghp_abc123"), None),
+            Some(McpHeaderRisk::CredentialPrefix { header: "MCP-Method", prefix: "ghp_".to_string() })
+        );
+        assert_eq!(
+            classify_mcp_headers(Some("sk-abcdefghij"), None),
+            Some(McpHeaderRisk::CredentialPrefix { header: "MCP-Method", prefix: "sk-".to_string() })
+        );
+        assert_eq!(
+            classify_mcp_headers(Some("Bearer token_here"), None),
+            Some(McpHeaderRisk::CredentialPrefix { header: "MCP-Method", prefix: "Bearer ".to_string() })
+        );
+    }
+
+    #[test]
     fn detects_high_entropy_in_mcp_method() {
         // 40-char base64-like string with high Shannon entropy
         let high_entropy_val = "aB3dE7fG9hJ1kL5mN8pQ2rS4tU6vW0xY9zA1bC3";
@@ -405,6 +370,14 @@ mod tests {
     #[test]
     fn detects_high_entropy_in_mcp_name() {
         let high_entropy_val = "Zk9mL2hC4nN6pR8sT0uV2wX4yZ6aB8cD0eF2gH4iJ6kL8mN0";
+        let risk = classify_mcp_headers(None, Some(high_entropy_val));
+        assert!(matches!(risk, Some(McpHeaderRisk::HighEntropy { .. })));
+    }
+
+    #[test]
+    fn classify_mcp_headers_detects_high_entropy() {
+        // High-entropy string (not just long repetitive chars)
+        let high_entropy_val = "aB3dE7fG9hJ1kL5mN8pQ2rS4tU6vW0xY9zA1bC3";
         let risk = classify_mcp_headers(None, Some(high_entropy_val));
         assert!(matches!(risk, Some(McpHeaderRisk::HighEntropy { .. })));
     }
@@ -433,6 +406,14 @@ mod tests {
     fn detects_email_with_subdomain() {
         let risk = classify_mcp_headers(None, Some("bob@mail.corp.org"));
         assert_eq!(risk, Some(McpHeaderRisk::EmailPattern));
+    }
+
+    #[test]
+    fn classify_mcp_headers_detects_pii_in_name() {
+        assert_eq!(
+            classify_mcp_headers(None, Some("user@example.com")),
+            Some(McpHeaderRisk::EmailPattern)
+        );
     }
 
     #[test]
@@ -487,5 +468,48 @@ mod tests {
         let s = "a".repeat(100);
         let e = shannon_entropy(&s);
         assert!(e.abs() < 0.01, "expected zero entropy, got {}", e);
+    }
+
+    // -- build_evidence tests --
+
+    #[test]
+    fn build_evidence_marks_reads_as_non_state_changing() {
+        let ev = build_evidence(
+            "ctx-1".into(),
+            "GET /x".into(),
+            &risk(SideEffectClass::Read),
+            1_700_000_000_000,
+            None,
+            None,
+        );
+        assert!(!ev.state_changing);
+        assert_eq!(ev.recording_mode, RecordingMode::Validation);
+        assert_eq!(ev.action_id, "ctx-1");
+        assert_eq!(ev.tool_name, "GET /x");
+        assert_eq!(ev.timestamp_ms, 1_700_000_000_000);
+        assert!(ev.precondition_digest.is_none());
+        assert!(ev.result_digest.is_none());
+        assert!(ev.capability_decision.is_none());
+        assert!(ev.mcp_header_risk.is_none());
+        assert!(ev.trace_id.is_none());
+        assert!(ev.session_id.is_none());
+    }
+
+    #[test]
+    fn build_evidence_marks_external_mutation_as_state_changing_and_full() {
+        let digest = "sha256:abc".to_string();
+        let ev = build_evidence(
+            "ctx-2".into(),
+            "POST /payments".into(),
+            &risk(SideEffectClass::MutateExternal),
+            42,
+            Some(digest.clone()),
+            None,
+        );
+        assert!(ev.state_changing);
+        assert_eq!(ev.recording_mode, RecordingMode::Full);
+        assert_eq!(ev.precondition_digest.as_deref(), Some(digest.as_str()));
+        assert!(ev.trace_id.is_none());
+        assert!(ev.session_id.is_none());
     }
 }
