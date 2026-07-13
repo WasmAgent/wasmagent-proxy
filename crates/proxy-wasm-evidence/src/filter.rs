@@ -1,7 +1,7 @@
 use proxy_wasm::traits::*;
 use proxy_wasm::types::*;
 
-use crate::recorder::{build_evidence, infer_side_effect_class};
+use crate::recorder::{build_evidence, classify_mcp_headers, infer_side_effect_class_with_mcp};
 use aep_core::recording::RiskContext;
 
 pub struct EvidenceFilter {
@@ -10,6 +10,11 @@ pub struct EvidenceFilter {
     path: String,
     trace_id: Option<String>,
     agent_id: Option<String>,
+    /// MCP-Method header value (MCP 2026-07-28+ protocol). When present, used in
+    /// place of the HTTP method heuristic for side-effect classification.
+    mcp_method: Option<String>,
+    /// MCP-Name header value (MCP 2026-07-28+). Checked for PII/credential leakage.
+    mcp_name: Option<String>,
 }
 
 impl EvidenceFilter {
@@ -20,6 +25,8 @@ impl EvidenceFilter {
             path: String::new(),
             trace_id: None,
             agent_id: None,
+            mcp_method: None,
+            mcp_name: None,
         }
     }
 }
