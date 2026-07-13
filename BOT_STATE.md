@@ -1,25 +1,25 @@
 # Bot State
 
-_Last updated: 2026-07-13 02:40 UTC by patrol_
+_Last updated: 2026-07-13 03:10 UTC by patrol_
 
 ## Queue
 
 | State | Count |
 |---|---|
-| Pending | 2 |
-| Active (running/reviewing) | 0 |
+| Pending | 4 |
+| Active (running/reviewing) | 1 |
 | Blocked | 0 |
-| Completed/Merged (all time) | 83 |
+| Completed/Merged (all time) | 84 |
 
 ## Recent Activity (last 5)
 
 | Issue | Title | Outcome | Date |
 |---|---|---|---|
+| #31 | [URGENT] mcp-compat: validate trace correlation model aga... | completed/complexity_gate_split | 2026-07-13 |
 | #22 | Cargo.toml: proxy-wasm-test-framework 0.1 not resolvable ... | completed/already_implemented | 2026-07-12 |
 | #21 | Missing unit tests for recording.rs / prov.rs / filter.rs... | completed/complexity_gate_split | 2026-07-12 |
 | #20 | panel-harvest #20 | completed/maintenance_done | 2026-07-12 |
 | #19 | panel-harvest #19 | completed/maintenance_done | 2026-07-12 |
-| #18 | panel-harvest #18 | completed/maintenance_done | 2026-07-12 |
 
 ## Waiting for Human
 
