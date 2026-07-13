@@ -20,7 +20,10 @@ const HIGH_ENTROPY_THRESHOLD: f64 = 4.0;
 #[derive(Debug, Clone)]
 pub enum McpHeaderRisk {
     /// Header value starts with a known credential prefix (e.g. `ghp_`, `sk-`).
-    CredentialPrefix { header: &'static str, prefix: String },
+    CredentialPrefix {
+        header: &'static str,
+        prefix: String,
+    },
     /// Header value is a long, high-entropy string suggesting an encoded secret.
     HighEntropy { header: &'static str, entropy: f64 },
     /// MCP-Name header contains an email-like pattern, suggesting PII leakage.
@@ -30,12 +33,26 @@ pub enum McpHeaderRisk {
 impl PartialEq for McpHeaderRisk {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::CredentialPrefix { header: a, prefix: pa }, Self::CredentialPrefix { header: b, prefix: pb }) => {
-                a == b && pa == pb
-            }
-            (Self::HighEntropy { header: a, entropy: ea }, Self::HighEntropy { header: b, entropy: eb }) => {
-                a == b && (ea - eb).abs() < 1e-10
-            }
+            (
+                Self::CredentialPrefix {
+                    header: a,
+                    prefix: pa,
+                },
+                Self::CredentialPrefix {
+                    header: b,
+                    prefix: pb,
+                },
+            ) => a == b && pa == pb,
+            (
+                Self::HighEntropy {
+                    header: a,
+                    entropy: ea,
+                },
+                Self::HighEntropy {
+                    header: b,
+                    entropy: eb,
+                },
+            ) => a == b && (ea - eb).abs() < 1e-10,
             (Self::EmailPattern, Self::EmailPattern) => true,
             _ => false,
         }
@@ -121,7 +138,10 @@ fn check_email_pattern(name: &str) -> bool {
 /// Returns `None` when both values are absent or benign.
 ///
 /// Priority: credential prefix > high entropy > email pattern (first match wins).
-pub fn classify_mcp_headers(mcp_method: Option<&str>, mcp_name: Option<&str>) -> Option<McpHeaderRisk> {
+pub fn classify_mcp_headers(
+    mcp_method: Option<&str>,
+    mcp_name: Option<&str>,
+) -> Option<McpHeaderRisk> {
     // Check MCP-Method first (credential prefix and high entropy)
     if let Some(method) = mcp_method {
         if let Some(risk) = check_single_header("MCP-Method", method) {
@@ -170,8 +190,12 @@ pub fn infer_side_effect_class_with_mcp(
     if let Some(mcp_op) = mcp_method {
         return match mcp_op {
             "tools/call" => SideEffectClass::MutateExternal,
-            "tools/list" | "resources/list" | "resources/read"
-            | "prompts/list" | "prompts/get" | "completion/complete" => SideEffectClass::Read,
+            "tools/list"
+            | "resources/list"
+            | "resources/read"
+            | "prompts/list"
+            | "prompts/get"
+            | "completion/complete" => SideEffectClass::Read,
             _ => SideEffectClass::Unknown,
         };
     }
@@ -242,25 +266,43 @@ mod tests {
     #[test]
     fn classifies_read_methods() {
         for method in ["GET", "head", "OpTiOnS"] {
-            assert_eq!(infer_side_effect_class(method, "/anything"), SideEffectClass::Read);
+            assert_eq!(
+                infer_side_effect_class(method, "/anything"),
+                SideEffectClass::Read
+            );
         }
     }
 
     #[test]
     fn classifies_external_mutations() {
-        assert_eq!(infer_side_effect_class("POST", "/users"), SideEffectClass::MutateExternal);
-        assert_eq!(infer_side_effect_class("DELETE", "/users/42"), SideEffectClass::MutateExternal);
+        assert_eq!(
+            infer_side_effect_class("POST", "/users"),
+            SideEffectClass::MutateExternal
+        );
+        assert_eq!(
+            infer_side_effect_class("DELETE", "/users/42"),
+            SideEffectClass::MutateExternal
+        );
     }
 
     #[test]
     fn classifies_network_egress_by_path() {
-        assert_eq!(infer_side_effect_class("POST", "/network/peers"), SideEffectClass::NetworkEgress);
-        assert_eq!(infer_side_effect_class("PUT", "/v1/webhook/xyz"), SideEffectClass::NetworkEgress);
+        assert_eq!(
+            infer_side_effect_class("POST", "/network/peers"),
+            SideEffectClass::NetworkEgress
+        );
+        assert_eq!(
+            infer_side_effect_class("PUT", "/v1/webhook/xyz"),
+            SideEffectClass::NetworkEgress
+        );
     }
 
     #[test]
     fn classifies_unknown_methods() {
-        assert_eq!(infer_side_effect_class("PROPFIND", "/"), SideEffectClass::Unknown);
+        assert_eq!(
+            infer_side_effect_class("PROPFIND", "/"),
+            SideEffectClass::Unknown
+        );
         assert_eq!(infer_side_effect_class("", ""), SideEffectClass::Unknown);
     }
 
@@ -276,7 +318,12 @@ mod tests {
 
     #[test]
     fn mcp_method_tools_list_is_read() {
-        for op in ["tools/list", "resources/list", "resources/read", "prompts/get"] {
+        for op in [
+            "tools/list",
+            "resources/list",
+            "resources/read",
+            "prompts/get",
+        ] {
             assert_eq!(
                 infer_side_effect_class_with_mcp("POST", "/mcp", Some(op)),
                 SideEffectClass::Read,
@@ -303,12 +350,18 @@ mod tests {
 
     #[test]
     fn no_risk_when_headers_benign() {
-        assert_eq!(classify_mcp_headers(Some("tools/list"), Some("my-tool")), None);
+        assert_eq!(
+            classify_mcp_headers(Some("tools/list"), Some("my-tool")),
+            None
+        );
     }
 
     #[test]
     fn classify_mcp_headers_clean_values_return_none() {
-        assert_eq!(classify_mcp_headers(Some("tools/call"), Some("my_tool")), None);
+        assert_eq!(
+            classify_mcp_headers(Some("tools/call"), Some("my_tool")),
+            None
+        );
         assert_eq!(classify_mcp_headers(None, None), None);
         assert_eq!(classify_mcp_headers(Some("tools/list"), None), None);
     }
@@ -347,15 +400,24 @@ mod tests {
     fn classify_mcp_headers_detects_credential_prefix() {
         assert_eq!(
             classify_mcp_headers(Some("ghp_abc123"), None),
-            Some(McpHeaderRisk::CredentialPrefix { header: "MCP-Method", prefix: "ghp_".to_string() })
+            Some(McpHeaderRisk::CredentialPrefix {
+                header: "MCP-Method",
+                prefix: "ghp_".to_string()
+            })
         );
         assert_eq!(
             classify_mcp_headers(Some("sk-abcdefghij"), None),
-            Some(McpHeaderRisk::CredentialPrefix { header: "MCP-Method", prefix: "sk-".to_string() })
+            Some(McpHeaderRisk::CredentialPrefix {
+                header: "MCP-Method",
+                prefix: "sk-".to_string()
+            })
         );
         assert_eq!(
             classify_mcp_headers(Some("Bearer token_here"), None),
-            Some(McpHeaderRisk::CredentialPrefix { header: "MCP-Method", prefix: "Bearer ".to_string() })
+            Some(McpHeaderRisk::CredentialPrefix {
+                header: "MCP-Method",
+                prefix: "Bearer ".to_string()
+            })
         );
     }
 
@@ -446,10 +508,13 @@ mod tests {
             "credential_prefix:ghp_"
         );
         assert_eq!(
-            classify_mcp_headers(None, Some("user@host.io")).unwrap().label(),
+            classify_mcp_headers(None, Some("user@host.io"))
+                .unwrap()
+                .label(),
             "email_pattern"
         );
-        let risk = classify_mcp_headers(Some("aB3dE7fG9hJ1kL5mN8pQ2rS4tU6vW0xY9zA1bC3"), None).unwrap();
+        let risk =
+            classify_mcp_headers(Some("aB3dE7fG9hJ1kL5mN8pQ2rS4tU6vW0xY9zA1bC3"), None).unwrap();
         let label = risk.label();
         assert!(label.starts_with("high_entropy:"));
     }

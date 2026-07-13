@@ -38,18 +38,20 @@ impl Context for EvidenceFilter {}
 impl HttpContext for EvidenceFilter {
     fn on_http_request_headers(&mut self, _num_headers: usize, _end_of_stream: bool) -> Action {
         self.method = self.get_http_request_header(":method").unwrap_or_default();
-        self.path   = self.get_http_request_header(":path").unwrap_or_default();
+        self.path = self.get_http_request_header(":path").unwrap_or_default();
 
         // --- MCP 2026-07-28 trace correlation ---
         // Check MCP-standard headers first, then fall back to Zipkin B3 / x-agent-id.
-        self.trace_id = self.get_http_request_header("mcp-trace-id")
+        self.trace_id = self
+            .get_http_request_header("mcp-trace-id")
             .or_else(|| self.get_http_request_header("x-b3-traceid"));
-        self.session_id = self.get_http_request_header("mcp-session-id")
+        self.session_id = self
+            .get_http_request_header("mcp-session-id")
             .or_else(|| self.get_http_request_header("x-agent-id"));
 
         // Detect sensitive-data leakage in MCP-specific headers.
         self.mcp_method = self.get_http_request_header("MCP-Method");
-        self.mcp_name   = self.get_http_request_header("MCP-Name");
+        self.mcp_name = self.get_http_request_header("MCP-Name");
         self.mcp_header_risk =
             classify_mcp_headers(self.mcp_method.as_deref(), self.mcp_name.as_deref())
                 .map(|r| r.label());
@@ -58,9 +60,8 @@ impl HttpContext for EvidenceFilter {
     }
 
     fn on_http_response_headers(&mut self, _num_headers: usize, _end_of_stream: bool) -> Action {
-        let side_effect_class = infer_side_effect_class_with_mcp(
-            &self.method, &self.path, self.mcp_method.as_deref(),
-        );
+        let side_effect_class =
+            infer_side_effect_class_with_mcp(&self.method, &self.path, self.mcp_method.as_deref());
         let risk_ctx = RiskContext {
             was_vetted: false,
             has_consent_anomaly: false,
