@@ -1,7 +1,7 @@
 use proxy_wasm::traits::*;
 use proxy_wasm::types::*;
 
-use crate::recorder::{build_evidence, infer_side_effect_class};
+use crate::recorder::{build_evidence, classify_mcp_headers, infer_side_effect_class};
 use aep_core::recording::RiskContext;
 
 pub struct EvidenceFilter {
@@ -10,6 +10,7 @@ pub struct EvidenceFilter {
     path: String,
     trace_id: Option<String>,
     agent_id: Option<String>,
+    mcp_header_risk: Option<String>,
 }
 
 impl EvidenceFilter {
@@ -20,6 +21,7 @@ impl EvidenceFilter {
             path: String::new(),
             trace_id: None,
             agent_id: None,
+            mcp_header_risk: None,
         }
     }
 }
@@ -32,6 +34,14 @@ impl HttpContext for EvidenceFilter {
         self.path   = self.get_http_request_header(":path").unwrap_or_default();
         self.trace_id = self.get_http_request_header("x-b3-traceid");
         self.agent_id = self.get_http_request_header("x-agent-id");
+
+        // Detect sensitive-data leakage in MCP-specific headers.
+        let mcp_method = self.get_http_request_header("MCP-Method");
+        let mcp_name   = self.get_http_request_header("MCP-Name");
+        self.mcp_header_risk =
+            classify_mcp_headers(mcp_method.as_deref(), mcp_name.as_deref())
+                .map(|r| r.label());
+
         Action::Continue
     }
 
@@ -45,13 +55,24 @@ impl HttpContext for EvidenceFilter {
         };
         let action_id = format!("ctx-{}", self.context_id);
         let tool_name = format!("{} {}", self.method, self.path);
-        let evidence = build_evidence(action_id, tool_name, &risk_ctx, 0, None);
+        let evidence = build_evidence(
+            action_id,
+            tool_name,
+            &risk_ctx,
+            0,
+            None,
+            self.mcp_header_risk.clone(),
+        );
         // Emit the canonical snake_case form (matching the `recording_mode` field
         // serialized into AEP records) rather than the Debug-format PascalCase.
         self.set_http_response_header(
             "x-aep-recording-mode",
             Some(evidence.recording_mode.as_str()),
         );
+        // If MCP header risk was detected, expose it as a response header.
+        if let Some(ref risk) = self.mcp_header_risk {
+            self.set_http_response_header("x-aep-mcp-header-risk", Some(risk.as_str()));
+        }
         Action::Continue
     }
 }

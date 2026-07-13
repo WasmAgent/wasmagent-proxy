@@ -22,7 +22,8 @@ pub mod recorder;
 mod filter;
 
 pub use config::PluginConfig;
-pub use recorder::{build_evidence, infer_side_effect_class};
+pub use recorder::{build_evidence, classify_mcp_headers, infer_side_effect_class};
+pub use recorder::McpHeaderRisk;
 
 #[cfg(target_arch = "wasm32")]
 use proxy_wasm::traits::HttpContext;

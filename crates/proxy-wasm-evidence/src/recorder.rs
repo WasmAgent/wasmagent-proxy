@@ -3,6 +3,144 @@ use aep_core::{
     recording::{compile_recording_policy, RiskContext, SideEffectClass},
 };
 
+// ---------------------------------------------------------------------------
+// MCP header sensitive-data leakage detection
+// ---------------------------------------------------------------------------
+
+/// Credential / secret prefixes that must never appear in MCP-specific headers.
+const CREDENTIAL_PREFIXES: &[&str] = &["ghp_", "sk-", "Bearer "];
+
+/// Minimum character length before entropy analysis triggers.
+const HIGH_ENTROPY_MIN_LEN: usize = 32;
+
+/// Shannon entropy threshold (bits per byte) above which a string is flagged.
+const HIGH_ENTROPY_THRESHOLD: f64 = 4.0;
+
+/// Risk category detected in MCP-specific HTTP headers.
+#[derive(Debug, Clone)]
+pub enum McpHeaderRisk {
+    /// Header value starts with a known credential prefix (e.g. `ghp_`, `sk-`).
+    CredentialPrefix { header: &'static str, prefix: String },
+    /// Header value is a long, high-entropy string suggesting an encoded secret.
+    HighEntropy { header: &'static str, entropy: f64 },
+    /// MCP-Name header contains an email-like pattern, suggesting PII leakage.
+    EmailPattern,
+}
+
+impl PartialEq for McpHeaderRisk {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::CredentialPrefix { header: a, prefix: pa }, Self::CredentialPrefix { header: b, prefix: pb }) => {
+                a == b && pa == pb
+            }
+            (Self::HighEntropy { header: a, entropy: ea }, Self::HighEntropy { header: b, entropy: eb }) => {
+                a == b && (ea - eb).abs() < 1e-10
+            }
+            (Self::EmailPattern, Self::EmailPattern) => true,
+            _ => false,
+        }
+    }
+}
+
+impl McpHeaderRisk {
+    /// Short label for the `x-aep-mcp-header-risk` response header and the
+    /// `mcp_header_risk` evidence field.
+    pub fn label(&self) -> String {
+        match self {
+            McpHeaderRisk::CredentialPrefix { prefix, .. } => {
+                format!("credential_prefix:{}", prefix.trim_end_matches(' '))
+            }
+            McpHeaderRisk::HighEntropy { entropy, .. } => format!("high_entropy:{:.2}", entropy),
+            McpHeaderRisk::EmailPattern => "email_pattern".to_string(),
+        }
+    }
+}
+
+/// Check a single header value for credential prefixes and high entropy.
+fn check_single_header(header_name: &'static str, value: &str) -> Option<McpHeaderRisk> {
+    // 1. Credential prefix check
+    for prefix in CREDENTIAL_PREFIXES {
+        if value.starts_with(prefix) {
+            return Some(McpHeaderRisk::CredentialPrefix {
+                header: header_name,
+                prefix: prefix.to_string(),
+            });
+        }
+    }
+
+    // 2. High-entropy check (only for values long enough to be suspicious)
+    if value.len() > HIGH_ENTROPY_MIN_LEN {
+        let entropy = shannon_entropy(value);
+        if entropy > HIGH_ENTROPY_THRESHOLD {
+            return Some(McpHeaderRisk::HighEntropy {
+                header: header_name,
+                entropy,
+            });
+        }
+    }
+
+    None
+}
+
+/// Compute Shannon entropy (bits per byte) of a string.
+fn shannon_entropy(s: &str) -> f64 {
+    let mut freq = [0usize; 256];
+    for b in s.bytes() {
+        freq[b as usize] += 1;
+    }
+    let len = s.len() as f64;
+    let mut h = 0.0;
+    for &count in &freq {
+        if count > 0 {
+            let p = count as f64 / len;
+            h -= p * p.log2();
+        }
+    }
+    h
+}
+
+/// Check MCP-Name for email-like patterns (PII leakage).
+fn check_email_pattern(name: &str) -> bool {
+    // Simple heuristic: look for something@something.something
+    let parts: Vec<&str> = name.split('@').collect();
+    if parts.len() == 2 {
+        let local = parts[0];
+        let domain = parts[1];
+        // Local part must be non-empty and domain must contain a dot
+        !local.is_empty() && domain.contains('.') && !domain.starts_with('.')
+    } else {
+        false
+    }
+}
+
+/// Classify MCP-specific HTTP headers for sensitive-data leakage.
+///
+/// Returns `Some(McpHeaderRisk)` when a value in `mcp_method` or `mcp_name`
+/// matches a known risk pattern (credential prefix, high entropy, email in name).
+/// Returns `None` when both values are absent or benign.
+///
+/// Priority: credential prefix > high entropy > email pattern (first match wins).
+pub fn classify_mcp_headers(mcp_method: Option<&str>, mcp_name: Option<&str>) -> Option<McpHeaderRisk> {
+    // Check MCP-Method first (credential prefix and high entropy)
+    if let Some(method) = mcp_method {
+        if let Some(risk) = check_single_header("MCP-Method", method) {
+            return Some(risk);
+        }
+    }
+
+    // Check MCP-Name (credential prefix, high entropy, then email pattern)
+    if let Some(name) = mcp_name {
+        if let Some(risk) = check_single_header("MCP-Name", name) {
+            return Some(risk);
+        }
+        if check_email_pattern(name) {
+            return Some(McpHeaderRisk::EmailPattern);
+        }
+    }
+
+    None
+}
+
 /// Infer SideEffectClass from HTTP method + path heuristics.
 /// In a real deployment, callers can set x-aep-side-effect-class header to override.
 pub fn infer_side_effect_class(method: &str, path: &str) -> SideEffectClass {
@@ -25,6 +163,7 @@ pub fn build_evidence(
     risk_ctx: &RiskContext,
     timestamp_ms: u64,
     precondition_digest: Option<String>,
+    mcp_header_risk: Option<String>,
 ) -> ActionEvidence {
     let policy = compile_recording_policy(risk_ctx);
     ActionEvidence {
@@ -38,6 +177,7 @@ pub fn build_evidence(
         causal_chain_id: None,
         recording_mode: policy.mode,
         capability_decision: None,
+        mcp_header_risk,
     }
 }
 
@@ -88,6 +228,7 @@ mod tests {
             &risk(SideEffectClass::Read),
             1_700_000_000_000,
             None,
+            None,
         );
         assert!(!ev.state_changing);
         assert_eq!(ev.recording_mode, RecordingMode::Validation);
@@ -97,6 +238,7 @@ mod tests {
         assert!(ev.precondition_digest.is_none());
         assert!(ev.result_digest.is_none());
         assert!(ev.capability_decision.is_none());
+        assert!(ev.mcp_header_risk.is_none());
     }
 
     #[test]
@@ -108,9 +250,149 @@ mod tests {
             &risk(SideEffectClass::MutateExternal),
             42,
             Some(digest.clone()),
+            None,
         );
         assert!(ev.state_changing);
         assert_eq!(ev.recording_mode, RecordingMode::Full);
         assert_eq!(ev.precondition_digest.as_deref(), Some(digest.as_str()));
+    }
+
+    // -----------------------------------------------------------------------
+    // classify_mcp_headers tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn no_risk_when_headers_absent() {
+        assert_eq!(classify_mcp_headers(None, None), None);
+    }
+
+    #[test]
+    fn no_risk_when_headers_benign() {
+        assert_eq!(classify_mcp_headers(Some("tools/list"), Some("my-tool")), None);
+    }
+
+    #[test]
+    fn detects_ghp_credential_prefix() {
+        let risk = classify_mcp_headers(Some("ghp_xxxxDeadBeef"), None);
+        let found = risk.and_then(|r| match r {
+            McpHeaderRisk::CredentialPrefix { prefix, .. } => Some(prefix),
+            _ => None,
+        });
+        assert_eq!(found, Some("ghp_".to_string()));
+    }
+
+    #[test]
+    fn detects_sk_credential_prefix() {
+        let risk = classify_mcp_headers(None, Some("sk-proj-abc123"));
+        let found = risk.and_then(|r| match r {
+            McpHeaderRisk::CredentialPrefix { prefix, .. } => Some(prefix),
+            _ => None,
+        });
+        assert_eq!(found, Some("sk-".to_string()));
+    }
+
+    #[test]
+    fn detects_bearer_credential_prefix() {
+        let risk = classify_mcp_headers(Some("Bearer eyJhbGciOiJIUzI1NiJ9"), None);
+        let found = risk.and_then(|r| match r {
+            McpHeaderRisk::CredentialPrefix { prefix, .. } => Some(prefix),
+            _ => None,
+        });
+        assert_eq!(found, Some("Bearer ".to_string()));
+    }
+
+    #[test]
+    fn detects_high_entropy_in_mcp_method() {
+        // 40-char base64-like string with high Shannon entropy
+        let high_entropy_val = "aB3dE7fG9hJ1kL5mN8pQ2rS4tU6vW0xY9zA1bC3";
+        let risk = classify_mcp_headers(Some(high_entropy_val), None);
+        assert!(matches!(risk, Some(McpHeaderRisk::HighEntropy { .. })));
+    }
+
+    #[test]
+    fn detects_high_entropy_in_mcp_name() {
+        let high_entropy_val = "Zk9mL2hC4nN6pR8sT0uV2wX4yZ6aB8cD0eF2gH4iJ6kL8mN0";
+        let risk = classify_mcp_headers(None, Some(high_entropy_val));
+        assert!(matches!(risk, Some(McpHeaderRisk::HighEntropy { .. })));
+    }
+
+    #[test]
+    fn low_entropy_string_not_flagged() {
+        // Long but repetitive — entropy will be low
+        let low_entropy_val = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        assert_eq!(classify_mcp_headers(Some(low_entropy_val), None), None);
+    }
+
+    #[test]
+    fn short_string_not_flagged_for_entropy() {
+        // Too short for entropy check even if random-looking
+        let short = "abc123xyz";
+        assert_eq!(classify_mcp_headers(Some(short), None), None);
+    }
+
+    #[test]
+    fn detects_email_pattern_in_mcp_name() {
+        let risk = classify_mcp_headers(None, Some("alice@example.com"));
+        assert_eq!(risk, Some(McpHeaderRisk::EmailPattern));
+    }
+
+    #[test]
+    fn detects_email_with_subdomain() {
+        let risk = classify_mcp_headers(None, Some("bob@mail.corp.org"));
+        assert_eq!(risk, Some(McpHeaderRisk::EmailPattern));
+    }
+
+    #[test]
+    fn no_email_pattern_from_at_sign_only() {
+        // Must have local part, @, and domain with a dot
+        assert_eq!(classify_mcp_headers(None, Some("@example.com")), None);
+        assert_eq!(classify_mcp_headers(None, Some("user@")), None);
+        assert_eq!(classify_mcp_headers(None, Some("user@domain")), None);
+        assert_eq!(classify_mcp_headers(None, Some("@")), None);
+    }
+
+    #[test]
+    fn credential_prefix_takes_priority_over_entropy() {
+        // A Bearer token that is also long enough for entropy check
+        let bearer = "Bearer aB3dE7fG9hJ1kL5mN8pQ2rS4tU6vW0xY9zA1bC3";
+        let risk = classify_mcp_headers(Some(bearer), None);
+        assert!(matches!(risk, Some(McpHeaderRisk::CredentialPrefix { .. })));
+    }
+
+    #[test]
+    fn credential_prefix_takes_priority_over_email() {
+        let risk = classify_mcp_headers(None, Some("sk-alice@example.com"));
+        assert!(matches!(risk, Some(McpHeaderRisk::CredentialPrefix { .. })));
+    }
+
+    #[test]
+    fn mcp_header_risk_label_format() {
+        assert_eq!(
+            classify_mcp_headers(Some("ghp_abc"), None).unwrap().label(),
+            "credential_prefix:ghp_"
+        );
+        assert_eq!(
+            classify_mcp_headers(None, Some("user@host.io")).unwrap().label(),
+            "email_pattern"
+        );
+        let risk = classify_mcp_headers(Some("aB3dE7fG9hJ1kL5mN8pQ2rS4tU6vW0xY9zA1bC3"), None).unwrap();
+        let label = risk.label();
+        assert!(label.starts_with("high_entropy:"));
+    }
+
+    #[test]
+    fn shannon_entropy_of_uniform_distribution() {
+        // A string with all 26 lowercase letters repeated 4 times = 104 chars
+        // Each letter has probability 4/104 = 1/26, so entropy ≈ log2(26) ≈ 4.7
+        let s: String = "abcdefghijklmnopqrstuvwxyz".repeat(4);
+        let e = shannon_entropy(&s);
+        assert!(e > 4.5, "expected entropy near log2(26), got {}", e);
+    }
+
+    #[test]
+    fn shannon_entropy_of_constant_string() {
+        let s = "a".repeat(100);
+        let e = shannon_entropy(&s);
+        assert!(e.abs() < 0.01, "expected zero entropy, got {}", e);
     }
 }
