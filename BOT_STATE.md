@@ -1,14 +1,14 @@
 # Bot State
 
-_Last updated: 2026-07-13 03:42 UTC by patrol_
+_Last updated: 2026-07-13 04:47 UTC by patrol_
 
 ## Queue
 
 | State | Count |
 |---|---|
-| Pending | 5 |
+| Pending | 4 |
 | Active (running/reviewing) | 0 |
-| Blocked | 0 |
+| Blocked | 1 |
 | Completed/Merged (all time) | 84 |
 
 ## Recent Activity (last 5)
@@ -23,6 +23,7 @@ _Last updated: 2026-07-13 03:42 UTC by patrol_
 
 ## Waiting for Human
 
+- #30: docs: clarify architectural boundary with OAuth/identity layer and commercial MCP gateways
 - #24: Fix WasmAgent/wasmagent-proxy#21 (Missing unit tests for recording.rs / prov.rs / filter.rs (acceptance requires >=3/>=2
 - #23: EvidenceFilter does not correctly classify HTTP side-effect class
 
