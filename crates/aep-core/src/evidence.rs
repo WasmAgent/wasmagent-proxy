@@ -22,6 +22,9 @@ pub struct ActionEvidence {
     pub causal_chain_id: Option<String>,
     pub recording_mode: RecordingMode,
     pub capability_decision: Option<CapabilityDecision>,
+    /// Risk label from MCP header analysis (e.g. `"credential_prefix:ghp_"`).
+    /// `None` when MCP-Method / MCP-Name headers are absent or benign.
+    pub mcp_header_risk: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
