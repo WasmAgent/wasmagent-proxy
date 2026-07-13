@@ -16,6 +16,8 @@ use aep_core::recording::RiskContext;
 /// - `Mcp-Method` — the JSON-RPC method name (e.g. `tools/call`), used as
 ///   higher-signal input for side-effect classification.
 /// - `Mcp-Name` — the tool or resource name invoked (e.g. `search`).
+/// - `Mcp-Handle-Id` — the handle ID threaded by the model between tool calls
+///   for correlating evidence across independent stateless requests.
 ///
 /// Additionally, the proxy reads two **implementation-specific** headers that
 /// are NOT part of the MCP specification but are widely used in OpenTelemetry
@@ -26,8 +28,9 @@ use aep_core::recording::RiskContext;
 ///
 /// Under the new stateless model, trace IDs no longer span a full
 /// conversation context; evidence records linked by `trace_id` may become
-/// disconnected across independent requests. The `mcp_method` and `mcp_name`
-/// headers provide a more reliable per-request correlation mechanism.
+/// disconnected across independent requests. The `mcp_method`, `mcp_name`,
+/// and `mcp_handle_id` headers provide a more reliable per-request correlation
+/// mechanism aligned with the MCP 2026-07-28 spec.
 pub struct EvidenceFilter {
     context_id: u32,
     method: String,
@@ -48,6 +51,11 @@ pub struct EvidenceFilter {
     /// MCP tool or resource name (e.g. `search`). Used as additional
     /// correlation signal under the stateless/handle-based model.
     mcp_name: Option<String>,
+    /// MCP handle ID for stateless request correlation. Threaded by the model
+    /// between tool calls as arguments and carried in the `Mcp-Handle-Id`
+    /// header. Under MCP 2026-07-28 this is the primary correlation key;
+    /// preferred over `trace_id` for linking evidence records.
+    handle_id: Option<String>,
 }
 
 impl EvidenceFilter {
@@ -61,6 +69,7 @@ impl EvidenceFilter {
             mcp_protocol_version: None,
             mcp_method: None,
             mcp_name: None,
+            handle_id: None,
         }
     }
 }
@@ -80,6 +89,8 @@ impl HttpContext for EvidenceFilter {
         self.mcp_protocol_version = self.get_http_request_header("MCP-Protocol-Version");
         self.mcp_method = self.get_http_request_header("Mcp-Method");
         self.mcp_name = self.get_http_request_header("Mcp-Name");
+        // Handle ID is the primary correlation key under the stateless model.
+        self.handle_id = self.get_http_request_header("Mcp-Handle-Id");
         Action::Continue
     }
 
@@ -113,6 +124,11 @@ impl HttpContext for EvidenceFilter {
             "x-aep-recording-mode",
             Some(evidence.recording_mode.as_str()),
         );
+        // When an MCP handle ID was received, echo it back so the caller can
+        // correlate this proxy's evidence with downstream tool-call evidence.
+        if let Some(ref handle_id) = self.handle_id {
+            self.set_http_response_header("x-aep-handle-id", Some(handle_id));
+        }
         Action::Continue
     }
 }
