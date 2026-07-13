@@ -138,11 +138,11 @@ mod tests {
     #[test]
     fn action_evidence_deserializes_missing_trace_fields_as_none() {
         let json = r#"{
-            \"action_id\": \"a\",
-            \"tool_name\": \"t\",
-            \"state_changing\": false,
-            \"timestamp_ms\": 0,
-            \"recording_mode\": \"validation\"
+            "action_id": "a",
+            "tool_name": "t",
+            "state_changing": false,
+            "timestamp_ms": 0,
+            "recording_mode": "validation"
         }"#;
         let ev: ActionEvidence = serde_json::from_str(json).unwrap();
         assert!(ev.trace_id.is_none());

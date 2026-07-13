@@ -1,7 +1,7 @@
 use proxy_wasm::traits::*;
 use proxy_wasm::types::*;
 
-use crate::recorder::{build_evidence, classify_mcp_headers, infer_side_effect_class};
+use crate::recorder::{build_evidence, classify_mcp_headers, infer_side_effect_class_with_mcp};
 use aep_core::recording::RiskContext;
 
 pub struct EvidenceFilter {
@@ -11,6 +11,11 @@ pub struct EvidenceFilter {
     trace_id: Option<String>,
     session_id: Option<String>,
     mcp_header_risk: Option<String>,
+    /// MCP-Method header value (MCP 2026-07-28+ protocol). When present, used in
+    /// place of the HTTP method heuristic for side-effect classification.
+    mcp_method: Option<String>,
+    /// MCP-Name header value (MCP 2026-07-28+). Checked for PII/credential leakage.
+    mcp_name: Option<String>,
 }
 
 impl EvidenceFilter {
@@ -22,6 +27,8 @@ impl EvidenceFilter {
             trace_id: None,
             session_id: None,
             mcp_header_risk: None,
+            mcp_method: None,
+            mcp_name: None,
         }
     }
 }
@@ -41,17 +48,19 @@ impl HttpContext for EvidenceFilter {
             .or_else(|| self.get_http_request_header("x-agent-id"));
 
         // Detect sensitive-data leakage in MCP-specific headers.
-        let mcp_method = self.get_http_request_header("MCP-Method");
-        let mcp_name   = self.get_http_request_header("MCP-Name");
+        self.mcp_method = self.get_http_request_header("MCP-Method");
+        self.mcp_name   = self.get_http_request_header("MCP-Name");
         self.mcp_header_risk =
-            classify_mcp_headers(mcp_method.as_deref(), mcp_name.as_deref())
+            classify_mcp_headers(self.mcp_method.as_deref(), self.mcp_name.as_deref())
                 .map(|r| r.label());
 
         Action::Continue
     }
 
     fn on_http_response_headers(&mut self, _num_headers: usize, _end_of_stream: bool) -> Action {
-        let side_effect_class = infer_side_effect_class(&self.method, &self.path);
+        let side_effect_class = infer_side_effect_class_with_mcp(
+            &self.method, &self.path, self.mcp_method.as_deref(),
+        );
         let risk_ctx = RiskContext {
             was_vetted: false,
             has_consent_anomaly: false,

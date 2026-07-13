@@ -8,7 +8,7 @@ use aep_core::{
 // ---------------------------------------------------------------------------
 
 /// Credential / secret prefixes that must never appear in MCP-specific headers.
-const CREDENTIAL_PREFIXES: &[&str] = &["ghp_", "sk-", "Bearer "];
+const CREDENTIAL_PREFIXES: &[&str] = &["ghp_", "ghb_", "sk-", "Bearer ", "token ", "api_"];
 
 /// Minimum character length before entropy analysis triggers.
 const HIGH_ENTROPY_MIN_LEN: usize = 32;
@@ -58,9 +58,10 @@ impl McpHeaderRisk {
 
 /// Check a single header value for credential prefixes and high entropy.
 fn check_single_header(header_name: &'static str, value: &str) -> Option<McpHeaderRisk> {
-    // 1. Credential prefix check
+    // 1. Credential prefix check (case-insensitive)
+    let lower = value.to_lowercase();
     for prefix in CREDENTIAL_PREFIXES {
-        if value.starts_with(prefix) {
+        if lower.starts_with(&prefix.to_lowercase()) {
             return Some(McpHeaderRisk::CredentialPrefix {
                 header: header_name,
                 prefix: prefix.to_string(),
@@ -141,9 +142,36 @@ pub fn classify_mcp_headers(mcp_method: Option<&str>, mcp_name: Option<&str>) ->
     None
 }
 
-/// Infer SideEffectClass from HTTP method + path heuristics.
-/// In a real deployment, callers can set x-aep-side-effect-class header to override.
+/// Infer SideEffectClass from HTTP method + path heuristics, with optional
+/// MCP-Method header input (MCP 2026-07-28+ protocol).
+///
+/// When mcp_method is provided it takes precedence over the HTTP method
+/// heuristic for MCP tool-call semantics:
+/// - "tools/call" → MutateExternal (tool invocations can have external effects)
+/// - "tools/list", "resources/list", "resources/read" → Read
+/// - "prompts/list", "prompts/get" → Read
+///
+/// In a real deployment, callers can also set x-aep-side-effect-class header to override.
 pub fn infer_side_effect_class(method: &str, path: &str) -> SideEffectClass {
+    infer_side_effect_class_with_mcp(method, path, None)
+}
+
+/// Full variant: accepts optional MCP-Method header for MCP 2026-07-28+ semantics.
+pub fn infer_side_effect_class_with_mcp(
+    method: &str,
+    path: &str,
+    mcp_method: Option<&str>,
+) -> SideEffectClass {
+    // MCP-Method header overrides HTTP method heuristic for known MCP operations.
+    if let Some(mcp_op) = mcp_method {
+        return match mcp_op {
+            "tools/call" => SideEffectClass::MutateExternal,
+            "tools/list" | "resources/list" | "resources/read"
+            | "prompts/list" | "prompts/get" | "completion/complete" => SideEffectClass::Read,
+            _ => SideEffectClass::Unknown,
+        };
+    }
+
     match method.to_uppercase().as_str() {
         "GET" | "HEAD" | "OPTIONS" => SideEffectClass::Read,
         "POST" | "PUT" | "PATCH" | "DELETE" => {
@@ -220,6 +248,65 @@ mod tests {
     fn classifies_unknown_methods() {
         assert_eq!(infer_side_effect_class("PROPFIND", "/"), SideEffectClass::Unknown);
         assert_eq!(infer_side_effect_class("", ""), SideEffectClass::Unknown);
+    }
+
+    #[test]
+    fn mcp_method_tools_call_is_mutate_external() {
+        assert_eq!(
+            infer_side_effect_class_with_mcp("POST", "/mcp", Some("tools/call")),
+            SideEffectClass::MutateExternal
+        );
+    }
+
+    #[test]
+    fn mcp_method_tools_list_is_read() {
+        for op in ["tools/list", "resources/list", "resources/read", "prompts/get"] {
+            assert_eq!(
+                infer_side_effect_class_with_mcp("POST", "/mcp", Some(op)),
+                SideEffectClass::Read,
+                "expected Read for MCP op: {}",
+                op
+            );
+        }
+    }
+
+    #[test]
+    fn mcp_method_unknown_op_is_unknown() {
+        assert_eq!(
+            infer_side_effect_class_with_mcp("POST", "/mcp", Some("custom/operation")),
+            SideEffectClass::Unknown
+        );
+    }
+
+    #[test]
+    fn classify_mcp_headers_detects_credential_prefix() {
+        assert_eq!(
+            classify_mcp_headers(Some("ghp_abc123"), None),
+            Some(McpHeaderRisk::CredentialPrefix { header: "MCP-Method", prefix: "ghp_".to_string() })
+        );
+        assert_eq!(
+            classify_mcp_headers(Some("sk-abcdefghij"), None),
+            Some(McpHeaderRisk::CredentialPrefix { header: "MCP-Method", prefix: "sk-".to_string() })
+        );
+        assert_eq!(
+            classify_mcp_headers(Some("Bearer token_here"), None),
+            Some(McpHeaderRisk::CredentialPrefix { header: "MCP-Method", prefix: "Bearer ".to_string() })
+        );
+    }
+
+    #[test]
+    fn classify_mcp_headers_clean_values_return_none() {
+        assert_eq!(classify_mcp_headers(Some("tools/call"), Some("my_tool")), None);
+        assert_eq!(classify_mcp_headers(None, None), None);
+        assert_eq!(classify_mcp_headers(Some("tools/list"), None), None);
+    }
+
+    #[test]
+    fn classify_mcp_headers_detects_pii_in_name() {
+        assert_eq!(
+            classify_mcp_headers(None, Some("user@example.com")),
+            Some(McpHeaderRisk::EmailPattern)
+        );
     }
 
     #[test]

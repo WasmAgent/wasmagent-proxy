@@ -22,7 +22,7 @@ pub mod recorder;
 mod filter;
 
 pub use config::PluginConfig;
-pub use recorder::{build_evidence, classify_mcp_headers, infer_side_effect_class};
+pub use recorder::{build_evidence, classify_mcp_headers, infer_side_effect_class, infer_side_effect_class_with_mcp};
 pub use recorder::McpHeaderRisk;
 
 #[cfg(target_arch = "wasm32")]
