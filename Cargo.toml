@@ -1,21 +1,15 @@
 [workspace]
-members = [
-    "crates/proxy-wasm-evidence",
-    "crates/aep-core",
-]
 resolver = "2"
+members = [
+  "crates/aep-core",
+  "crates/proxy-wasm-evidence",
+]
 
 [workspace.package]
 version      = "0.1.0"
 edition      = "2021"
 license      = "Apache-2.0"
 repository   = "https://github.com/WasmAgent/wasmagent-proxy"
-authors      = ["WasmAgent contributors"]
 
-[profile.release]
-opt-level = "z"
-lto       = true
-strip     = true
-
-[profile.release.package."*"]
-opt-level = "z"
+[workspace.dependencies]
+# shared across all workspace crates

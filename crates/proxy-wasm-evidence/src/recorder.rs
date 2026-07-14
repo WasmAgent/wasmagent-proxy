@@ -1,7 +1,103 @@
 use aep_core::{
-    evidence::ActionEvidence,
+    evidence::{ActionEvidence, McpHeaderRisk},
     recording::{compile_recording_policy, RiskContext, SideEffectClass},
 };
+
+/// Check whether `value` has an email-like structure (`local@domain.tld`).
+///
+/// Returns `true` if the value contains a single `@` with at least one
+/// character before it and a `.` after it in the domain portion. This avoids
+/// the false positives that a naive `.contains('@')` + `.contains('.')` would
+/// produce (e.g. `@example` or `user@`).
+fn looks_like_email(value: &str) -> bool {
+    if let Some(at_pos) = value.rfind('@') {
+        // At least one char before '@'
+        if at_pos == 0 {
+            return false;
+        }
+        // At least one char after '@'
+        let after_at = &value[at_pos + 1..];
+        if after_at.is_empty() {
+            return false;
+        }
+        // The domain part must contain at least one '.'
+        if after_at.contains('.') {
+            return true;
+        }
+    }
+    false
+}
+
+/// Check whether `value` starts with a known credential/token prefix.
+fn has_credential_prefix(value: &str) -> bool {
+    let lower = value.trim().to_lowercase();
+    lower.starts_with("ghp_")
+        || lower.starts_with("sk-")
+        || lower.starts_with("bearer ")
+}
+
+/// Classify an MCP header value for sensitive-data leakage risk.
+///
+/// Examines the value against three heuristics:
+/// - **Credential prefixes**: `ghp_`, `sk-`, `Bearer `
+/// - **High-entropy**: length > 32 characters (proxy for tokens, JWTs)
+/// - **Email-like**: structured `local@domain.tld` pattern
+///
+/// Returns `Some(McpHeaderRisk)` if at least one heuristic fires, `None`
+/// if the value appears benign.
+fn classify_single_mcp_value(source_header: &str, value: &str) -> Option<McpHeaderRisk> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let has_credential_prefix = has_credential_prefix(trimmed);
+    let is_high_entropy = trimmed.len() > 32;
+    let is_email_like = looks_like_email(trimmed);
+
+    if has_credential_prefix || is_high_entropy || is_email_like {
+        let snippet = if trimmed.len() > 40 {
+            format!("{}...", &trimmed[..40])
+        } else {
+            trimmed.to_string()
+        };
+        Some(McpHeaderRisk {
+            has_credential_prefix,
+            is_high_entropy,
+            is_email_like,
+            source_header: source_header.to_string(),
+            value_snippet: snippet,
+        })
+    } else {
+        None
+    }
+}
+
+/// Classify `MCP-Method` and `MCP-Name` header values for sensitive-data
+/// leakage risk.
+///
+/// Returns the first detected risk (MCP-Method checked first, then MCP-Name),
+/// or `None` if neither header carries a risky value.
+pub fn classify_mcp_headers(
+    mcp_method: Option<&str>,
+    mcp_name: Option<&str>,
+) -> Option<McpHeaderRisk> {
+    if let Some(val) = mcp_method {
+        if !val.trim().is_empty() {
+            if let Some(risk) = classify_single_mcp_value("MCP-Method", val) {
+                return Some(risk);
+            }
+        }
+    }
+    if let Some(val) = mcp_name {
+        if !val.trim().is_empty() {
+            if let Some(risk) = classify_single_mcp_value("MCP-Name", val) {
+                return Some(risk);
+            }
+        }
+    }
+    None
+}
 
 /// Infer [`SideEffectClass`] from HTTP method + path heuristics.
 ///
@@ -98,12 +194,16 @@ pub fn resolve_side_effect_class(
 /// granularity (`validation` / `delta` / `full`) is preserved in `recording_mode`,
 /// so downstream consumers that need to distinguish e.g. GET from POST read both
 /// fields rather than relying on `state_changing` alone.
+///
+/// `mcp_header_risk` carries sensitive-data leakage signals detected in the
+/// MCP-Method and MCP-Name request headers (see [`classify_mcp_headers`]).
 pub fn build_evidence(
     action_id: String,
     tool_name: String,
     risk_ctx: &RiskContext,
     timestamp_ms: u64,
     precondition_digest: Option<String>,
+    mcp_header_risk: Option<McpHeaderRisk>,
 ) -> ActionEvidence {
     let policy = compile_recording_policy(risk_ctx);
     ActionEvidence {
@@ -117,6 +217,7 @@ pub fn build_evidence(
         causal_chain_id: None,
         recording_mode: policy.mode,
         capability_decision: None,
+        mcp_header_risk,
     }
 }
 
@@ -133,6 +234,140 @@ mod tests {
             side_effect_class,
         }
     }
+
+    // ── classify_mcp_headers tests ──────────────────────────────────────
+
+    #[test]
+    fn mcp_method_contains_github_token() {
+        let risk = classify_mcp_headers(Some("ghp_abc123def456"), None);
+        assert!(risk.is_some());
+        let r = risk.unwrap();
+        assert!(r.has_credential_prefix);
+        assert_eq!(r.source_header, "MCP-Method");
+    }
+
+    #[test]
+    fn mcp_name_contains_sk_prefix() {
+        let risk = classify_mcp_headers(None, Some("sk-proj-xxxxxxxxxxxx"));
+        assert!(risk.is_some());
+        let r = risk.unwrap();
+        assert!(r.has_credential_prefix);
+        assert_eq!(r.source_header, "MCP-Name");
+    }
+
+    #[test]
+    fn mcp_method_contains_bearer_token() {
+        let risk = classify_mcp_headers(Some("Bearer eyJhbGciOiJIUzI1NiJ9"), None);
+        assert!(risk.is_some());
+        let r = risk.unwrap();
+        assert!(r.has_credential_prefix);
+    }
+
+    #[test]
+    fn mcp_name_contains_email() {
+        let risk = classify_mcp_headers(None, Some("user@example.com"));
+        assert!(risk.is_some());
+        let r = risk.unwrap();
+        assert!(r.is_email_like);
+        assert!(!r.has_credential_prefix);
+        assert_eq!(r.source_header, "MCP-Name");
+    }
+
+    #[test]
+    fn mcp_method_long_string_is_high_entropy() {
+        let long = "a".repeat(40);
+        let risk = classify_mcp_headers(Some(&long), None);
+        assert!(risk.is_some());
+        let r = risk.unwrap();
+        assert!(r.is_high_entropy);
+    }
+
+    #[test]
+    fn mcp_method_short_string_no_risk() {
+        let risk = classify_mcp_headers(Some("tools/call"), None);
+        assert!(risk.is_none());
+    }
+
+    #[test]
+    fn mcp_name_short_string_no_risk() {
+        let risk = classify_mcp_headers(None, Some("list-files"));
+        assert!(risk.is_none());
+    }
+
+    #[test]
+    fn both_headers_absent_no_risk() {
+        let risk = classify_mcp_headers(None, None);
+        assert!(risk.is_none());
+    }
+
+    #[test]
+    fn empty_values_no_risk() {
+        let risk = classify_mcp_headers(Some(""), Some(""));
+        assert!(risk.is_none());
+    }
+
+    #[test]
+    fn whitespace_only_values_no_risk() {
+        let risk = classify_mcp_headers(Some("   "), Some(" \t "));
+        assert!(risk.is_none());
+    }
+
+    #[test]
+    fn mcp_method_risky_takes_precedence_over_mcp_name() {
+        // When both headers are present and both are risky, MCP-Method wins
+        // because it is checked first.
+        let risk = classify_mcp_headers(Some("ghp_xxx"), Some("user@example.com"));
+        assert!(risk.is_some());
+        let r = risk.unwrap();
+        assert!(r.has_credential_prefix);
+        assert_eq!(r.source_header, "MCP-Method");
+    }
+
+    #[test]
+    fn mcp_name_risky_when_method_absent() {
+        let risk = classify_mcp_headers(None, Some("ghp_xxx"));
+        assert!(risk.is_some());
+        let r = risk.unwrap();
+        assert!(r.has_credential_prefix);
+        assert_eq!(r.source_header, "MCP-Name");
+    }
+
+    #[test]
+    fn email_detection_rejects_no_local_part() {
+        assert!(!looks_like_email("@example.com"));
+    }
+
+    #[test]
+    fn email_detection_rejects_no_domain_dot() {
+        assert!(!looks_like_email("user@example"));
+    }
+
+    #[test]
+    fn email_detection_rejects_no_at() {
+        assert!(!looks_like_email("userexample.com"));
+    }
+
+    #[test]
+    fn email_detection_accepts_valid() {
+        assert!(looks_like_email("user@example.com"));
+        assert!(looks_like_email("first.last@sub.example.co.uk"));
+    }
+
+    #[test]
+    fn value_snippet_truncates_long_values() {
+        let long = "a".repeat(100);
+        let risk = classify_mcp_headers(Some(&long), None).unwrap();
+        assert_eq!(risk.value_snippet.len(), 43); // 40 chars + "..."
+        assert!(risk.value_snippet.ends_with("..."));
+    }
+
+    #[test]
+    fn value_snippet_short_values_no_ellipsis() {
+        let risk = classify_mcp_headers(Some("ghp_abcdef"), None).unwrap();
+        assert_eq!(risk.value_snippet, "ghp_abcdef");
+    }
+
+    // ── Existing side-effect classification tests ──────────────────────
 
     #[test]
     fn classifies_read_methods() {
@@ -204,6 +439,7 @@ mod tests {
             &risk(SideEffectClass::Read),
             1_700_000_000_000,
             None,
+            None, // no MCP risk
         );
         assert!(!ev.state_changing);
         assert_eq!(ev.recording_mode, RecordingMode::Validation);
@@ -213,6 +449,7 @@ mod tests {
         assert!(ev.precondition_digest.is_none());
         assert!(ev.result_digest.is_none());
         assert!(ev.capability_decision.is_none());
+        assert!(ev.mcp_header_risk.is_none());
     }
 
     #[test]
@@ -224,6 +461,7 @@ mod tests {
             &risk(SideEffectClass::MutateExternal),
             42,
             Some(digest.clone()),
+            None,
         );
         assert!(ev.state_changing);
         assert_eq!(ev.recording_mode, RecordingMode::Full);
@@ -242,6 +480,7 @@ mod tests {
             &risk(class),
             100,
             None,
+            None,
         );
         assert!(ev.state_changing);
         assert_eq!(ev.recording_mode, RecordingMode::Delta);
@@ -253,7 +492,14 @@ mod tests {
         let class = infer_side_effect_class("GET", "/items");
         assert_eq!(class, SideEffectClass::Read);
 
-        let ev = build_evidence("ctx-4".into(), "GET /items".into(), &risk(class), 200, None);
+        let ev = build_evidence(
+            "ctx-4".into(),
+            "GET /items".into(),
+            &risk(class),
+            200,
+            None,
+            None,
+        );
         assert!(!ev.state_changing);
         assert_eq!(ev.recording_mode, RecordingMode::Validation);
     }
@@ -270,6 +516,7 @@ mod tests {
             &risk(class),
             300,
             None,
+            None,
         );
         assert!(ev.state_changing);
         assert_eq!(ev.recording_mode, RecordingMode::Full);
@@ -277,15 +524,12 @@ mod tests {
 
     #[test]
     fn state_changing_flag_distinguishes_read_from_mutate() {
-        // Review finding #1: `state_changing` is a coarse read-vs-mutate flag by
-        // design — GET (Read) is false, POST (MutateLocal) is true. The full method
-        // is retained in `tool_name` and the recording granularity in
-        // `recording_mode`, so GET-vs-POST is not silently dropped.
         let get_ev = build_evidence(
             "get".into(),
             "GET /items".into(),
             &risk(SideEffectClass::Read),
             0,
+            None,
             None,
         );
         let post_ev = build_evidence(
@@ -293,6 +537,7 @@ mod tests {
             "POST /items".into(),
             &risk(SideEffectClass::MutateLocal),
             0,
+            None,
             None,
         );
         assert!(!get_ev.state_changing);
@@ -305,10 +550,6 @@ mod tests {
 
     #[test]
     fn unknown_method_is_fail_closed_to_full_capture() {
-        // Review finding #2: an unrecognized method (e.g. WebDAV PROPFIND) classifies
-        // as Unknown and intentionally records in Full. An evidence system fails
-        // closed (over-record) when it cannot classify a request rather than
-        // risking under-recording.
         let class = infer_side_effect_class("PROPFIND", "/");
         assert_eq!(class, SideEffectClass::Unknown);
         let ev = build_evidence(
@@ -317,6 +558,7 @@ mod tests {
             &risk(class),
             0,
             None,
+            None,
         );
         assert!(ev.state_changing);
         assert_eq!(ev.recording_mode, RecordingMode::Full);
@@ -324,10 +566,6 @@ mod tests {
 
     #[test]
     fn override_header_downgrades_network_path_to_mutate_local() {
-        // Review finding #3: high-volume internal traffic on `/network/…` paths
-        // would otherwise be captured in full. An operator can set the
-        // `x-aep-side-effect-class` override header to pin a cheaper class for
-        // that request, avoiding storage exhaustion.
         assert_eq!(
             resolve_side_effect_class(Some("mutate_local"), "POST", "/network/peers"),
             SideEffectClass::MutateLocal,
@@ -339,13 +577,13 @@ mod tests {
             &risk(SideEffectClass::MutateLocal),
             1,
             None,
+            None,
         );
         assert_eq!(ev.recording_mode, RecordingMode::Delta);
     }
 
     #[test]
     fn override_header_accepts_case_and_separator_variants() {
-        // The override travels in an HTTP header — accept kebab-case and any casing.
         assert_eq!(
             resolve_side_effect_class(Some("MUTATE-EXTERNAL"), "GET", "/x"),
             SideEffectClass::MutateExternal,
@@ -362,20 +600,53 @@ mod tests {
 
     #[test]
     fn unrecognized_or_absent_override_falls_back_to_heuristic() {
-        // Absent override → heuristic (POST /network/peers → NetworkEgress).
         assert_eq!(
             resolve_side_effect_class(None, "POST", "/network/peers"),
             SideEffectClass::NetworkEgress,
         );
-        // Garbage override → heuristic, never breaks the request.
         assert_eq!(
             resolve_side_effect_class(Some("nonsense"), "POST", "/network/peers"),
             SideEffectClass::NetworkEgress,
         );
-        // Override is all-or-nothing: a value with trailing junk does not parse.
         assert_eq!(
             resolve_side_effect_class(Some("read please"), "POST", "/users"),
             SideEffectClass::MutateLocal,
         );
+    }
+
+    #[test]
+    fn build_evidence_includes_mcp_header_risk() {
+        let mcp_risk = McpHeaderRisk {
+            has_credential_prefix: true,
+            is_high_entropy: false,
+            is_email_like: false,
+            source_header: "MCP-Method".into(),
+            value_snippet: "ghp_xxx".into(),
+        };
+        let ev = build_evidence(
+            "ctx-risk".into(),
+            "GET /x".into(),
+            &risk(SideEffectClass::Read),
+            0,
+            None,
+            Some(mcp_risk.clone()),
+        );
+        assert_eq!(ev.mcp_header_risk, Some(mcp_risk));
+    }
+
+    #[test]
+    fn classify_mcp_headers_detects_sk_prefix_case_insensitive() {
+        // sk- prefix check should be case-insensitive
+        let risk = classify_mcp_headers(Some("SK-XXXXXXXX"), None);
+        assert!(risk.is_some());
+        assert!(risk.unwrap().has_credential_prefix);
+    }
+
+    #[test]
+    fn classify_mcp_headers_credential_prefix_leading_whitespace() {
+        // Leading whitespace before credential prefix should still be detected
+        let risk = classify_mcp_headers(Some("  ghp_xxx"), None);
+        assert!(risk.is_some());
+        assert!(risk.unwrap().has_credential_prefix);
     }
 }
