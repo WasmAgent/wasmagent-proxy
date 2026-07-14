@@ -51,8 +51,6 @@ PATH=/root/.cargo/bin:$PATH cargo clippy --workspace -- -D warnings
 
 ## Strategic positioning
 
-**Read `docs/strategy.md` before opening new issues or designing new features.**
-
 This project is NOT a general MCP gateway. Its defensible niche is:
 
 **"MCP-protocol-aware evidence and audit layer"** — a thin Proxy-Wasm plugin that sits
@@ -69,15 +67,17 @@ Key differentiation:
 3. **Gateway-agnostic** — sidecar alongside any Proxy-Wasm host.
 
 **Capability boundary**: wasmagent-proxy only sees traffic that passes through it.
-It cannot observe endpoint-local MCP servers. Document this clearly.
+It cannot observe endpoint-local MCP servers. For the deployment model with
+identity/OAuth layers and commercial MCP gateways, see [docs/deployment-model.md](docs/deployment-model.md).
+For the full architecture with component responsibilities and AEP recording flow,
+see [docs/architecture.md](docs/architecture.md).
 
 ## Key references
 
 | Reference | What it covers |
 |-----------|---------------|
 | `README.md` | Architecture, Proxy-Wasm design, configuration fields |
-| `docs/strategy.md` | **Strategic positioning, competitive landscape, differentiation** |
-| `docs/architecture.md` | System diagram, component responsibilities, AEP recording flow, Ed25519 signing |
+| `docs/architecture.md` | System diagram, component responsibilities, AEP recording flow, Ed25519 signing, boundary with identity/OAuth layers |
 | `docs/deployment-model.md` | Architectural boundary with identity/OAuth layer, capability boundary, complementary layers |
 | `docs/mcp-protocol-compatibility.md` | MCP 2026-07-28 compatibility: stateless model, MCP-Method/MCP-Name headers, leakage detection |
 | `docs/deployment.md` | Envoy/Istio quickstart, K8s secret injection walkthrough |
@@ -85,7 +85,7 @@ It cannot observe endpoint-local MCP servers. Document this clearly.
 | `docs/aep-evidence-format.md` | AEP record structure, side-effect classification, DSSE envelope |
 | `crates/aep-core/src/lib.rs` | RecordingMode, ActionEvidence types — the core contract |
 | `crates/proxy-wasm-evidence/src/filter.rs` | EvidenceFilter — the Wasm HTTP context |
-| `crates/proxy-wasm-evidence/src/recorder.rs` | Recording policy implementation |
+| `crates/proxy-wasm-evidence/src/recorder.rs` | Recording policy implementation, classify_mcp_headers, side-effect classification |
 | `deploy/envoy/envoy.yaml` | Envoy filter chain config reference |
 | `deploy/istio/wasmplugin.yaml` | Istio WasmPlugin config reference |
 
@@ -98,8 +98,10 @@ co-located with source (lib.rs #[cfg(test)]).
 ### Completed ✅
 - `aep-core`: RecordingMode, ActionEvidence, PROV-DM types, BundleSigner (Ed25519)
 - `proxy-wasm-evidence`: EvidenceFilter HTTP context, request/response classification
-- Recording policy: read/mutate-local/mutate-external/network-egress classification
-- 6 unit tests passing
+- Recording policy: read/mutate-local/mutate-external/network-egress classification with `infer_side_effect_class`
+- `resolve_side_effect_class`: per-request override via `x-aep-side-effect-class` header
+- `classify_mcp_headers()`: MCP-Method/MCP-Name header leakage detection (credential prefixes, high-entropy, PII patterns) with 20+ unit tests
+- 20+ unit tests passing across all crates
 - Deploy configs: `deploy/envoy/envoy.yaml`, `deploy/istio/wasmplugin.yaml`, `deploy/k8s/signing-secret.yaml`
 - Benchmark skeleton: `benchmarks/latency_bench.rs`
 - MCP 2026-07-28 compatibility: stateless model documented (`docs/mcp-protocol-compatibility.md`),
@@ -112,14 +114,12 @@ co-located with source (lib.rs #[cfg(test)]).
 - Issue #13: integration test (full request/response cycle)
 - Issue #23: EvidenceFilter HTTP side-effect classification bug (PRs #26, #27 open)
 - Issue #24: recording.rs / prov.rs / filter.rs unit tests (PR #28 open)
-- Issue #29: MCP-Method/MCP-Name leakage detection (PR #38 open)
 - Issue #31: MCP compat validation (PRs #35, #39 open)
 
 ### Open PRs
 - PR #26, #27: Fix #23 — EvidenceFilter side-effect classification
 - PR #28: Fix #24 — unit tests for recording.rs/prov.rs/filter.rs
 - PR #35, #39: Fix #31 — MCP 2026-07-28 compat
-- PR #38: Fix #29 — MCP header leakage detection
 
 ## Roadmap
 
@@ -153,7 +153,7 @@ Bot: implement issues in order. When an issue closes, open the next unchecked it
 ### Phase 6: MCP-aware security evidence layer
 - [ ] #23 fix: EvidenceFilter HTTP side-effect classification bug (PRs #26/#27 — pick one and land it)
 - [ ] #24 test: unit tests for recording.rs, prov.rs, filter.rs (PR #28)
-- [ ] #29 feat: `classify_mcp_headers()` — MCP-Method/MCP-Name leakage detection (PR #38)
+- [x] #29 feat: `classify_mcp_headers()` — MCP-Method/MCP-Name leakage detection (PR #38)
 - [ ] #31 docs/test: MCP 2026-07-28 compat — validate trace correlation model (PRs #35/#39)
 - [x] #30 docs: `docs/deployment-model.md` — architectural boundary with identity/OAuth layer and commercial MCP gateways
 - [x] docs: expand architecture.md — relationship to OAuth 2.1/identity layers

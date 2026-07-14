@@ -23,7 +23,9 @@ generic metadata), creating a class of credential/PII leakage that standard API
 gateways are not looking for.
 
 This is a concrete, named, industry-acknowledged risk that commercial gateways
-are NOT solving as of this writing. `classify_mcp_headers()` is our answer.
+are NOT solving as of this writing. `classify_mcp_headers()` is our answer —
+it is implemented, tested (20+ unit tests), and surfaced in the AEP evidence
+record via the `McpHeaderRisk` struct.
 
 The same spec shift also moves from stateful sessions to a stateless/handle
 model. For wasmagent-proxy this is largely neutral: `x-b3-traceid` and
@@ -57,6 +59,8 @@ endpoint-layer evidence tool is `@wasmagent/aep` in wasmagent-js.
 1. Fix EvidenceFilter classification bug (issue #23) — credibility prerequisite
 2. Adequate test coverage for recording.rs, prov.rs, filter.rs — no enterprise
    will evaluate an Ed25519 signing module with zero tests
-3. Promote `classify_mcp_headers()` to a tested, documented first-class API
+3. `classify_mcp_headers()` — MCP-Method/MCP-Name leakage detection (implemented
+   with 20+ unit tests; continue hardening as first-class API)
 4. Document capability boundary and relationship to auth layers explicitly
+   (completed: `docs/architecture.md` and `docs/deployment-model.md` cover this)
 5. Phase 5 production hardening (serialization, Prometheus, ring buffer)

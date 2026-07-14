@@ -14,7 +14,7 @@ in the MCP 2026-07-28 specification, and how the filter handles each change.
 | Request identification | x-b3-traceid / x-agent-id headers | Same headers still valid; handle is transport-level | No change required |
 | MCP operation type | Inferred from HTTP method + path | MCP-Method header explicitly names the operation | **Extended**: filter now reads MCP-Method and classifies accordingly |
 | Tool call vs. list | Not distinguishable from HTTP method alone | MCP-Method = tools/call vs. tools/list | **Extended**: tools/call → MutateExternal; tools/list → Read |
-| Header leakage risk | N/A | MCP-Method / MCP-Name may contain leaked secrets | **New**: classify_mcp_headers() detects credential/PII leakage |
+| Header leakage risk | N/A | MCP-Method / MCP-Name may contain leaked secrets | **New**: `classify_mcp_headers()` detects credential/PII leakage |
 
 ## x-b3-traceid under the stateless model
 
@@ -51,14 +51,38 @@ heuristic is used as before.
 
 Akamai identified that developers may accidentally map secrets or PII into
 MCP-Method or MCP-Name headers (e.g. using them as generic metadata headers).
+The filter calls [`classify_mcp_headers()`](../crates/proxy-wasm-evidence/src/recorder.rs)
+on every request and, if a risk is detected, sets
+`x-aep-mcp-header-risk` to a JSON representation of the `McpHeaderRisk` struct
+on the response.
 
-The filter calls classify_mcp_headers() on every request and, if a risk is
-detected, sets x-aep-mcp-header-risk: critical|high on the response.
+### Detection heuristics
 
-Detection patterns:
-- Credential prefixes: ghp_, sk-, Bearer, token, api_ (case-insensitive)
-- High-entropy strings: longest alphanumeric run >= 32 chars
-- PII: email address pattern in MCP-Name (contains @ and .)
+`classify_mcp_headers()` checks MCP-Method first, then MCP-Name, and returns
+the first detected risk. Each header value is examined for:
+
+| Pattern | Detection logic | Example trigger |
+|---|---|---|
+| Credential prefix | Value starts with `ghp_`, `sk-`, or `Bearer ` (case-insensitive, after trimming) | `ghp_abc123`, `sk-proj-xxx`, `Bearer eyJ...` |
+| High-entropy string | Value length > 32 characters | A 40-character JWT or API token |
+| Email-like pattern | Value matches `local@domain.tld` structure (characters before `@`, a `.` in the domain part) | `user@example.com` |
+
+### Response header format
+
+When a risk is detected, the filter sets:
+
+```
+x-aep-mcp-header-risk: {"has_credential_prefix":true,"is_high_entropy":false,"is_email_like":false,"source_header":"MCP-Method","value_snippet":"ghp_abc123..."}
+```
+
+The `value_snippet` field contains the first 40 characters of the risky value
+(enough for forensics without exposing the full secret across intermediary hops).
+
+### No risk
+
+When both MCP-Method and MCP-Name values appear benign (or are absent), no
+`x-aep-mcp-header-risk` header is set. The filter produces a normal AEP
+evidence record without the `mcp_header_risk` field populated.
 
 ## Capability boundary
 
@@ -69,4 +93,4 @@ filter. It cannot observe:
 - Traffic that bypasses the proxy (direct MCP server connections)
 - Content inside TLS-encrypted payloads if TLS termination is upstream
 
-For endpoint-layer evidence, see agent-trust-infra's @wasmagent/aep package.
+For endpoint-layer evidence, see [agent-trust-infra](https://github.com/WasmAgent/agent-trust-infra).
