@@ -84,7 +84,7 @@ impl Context for EvidenceFilter {}
 impl HttpContext for EvidenceFilter {
     fn on_http_request_headers(&mut self, _num_headers: usize, _end_of_stream: bool) -> Action {
         self.method = self.get_http_request_header(":method").unwrap_or_default();
-        self.path   = self.get_http_request_header(":path").unwrap_or_default();
+        self.path = self.get_http_request_header(":path").unwrap_or_default();
 
         // Implementation-specific correlation headers (NOT part of MCP protocol).
         self.trace_id = self.get_http_request_header("x-b3-traceid");
@@ -103,11 +103,8 @@ impl HttpContext for EvidenceFilter {
         // When MCP-Method is present, use it for higher-signal side-effect
         // classification (e.g. `tools/call` implies external mutation) instead
         // of falling back to HTTP method + path heuristics alone.
-        let side_effect_class = infer_side_effect_class(
-            &self.method,
-            &self.path,
-            self.mcp_method.as_deref(),
-        );
+        let side_effect_class =
+            infer_side_effect_class(&self.method, &self.path, self.mcp_method.as_deref());
         let risk_ctx = RiskContext {
             was_vetted: false,
             has_consent_anomaly: false,

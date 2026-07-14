@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::recording::RecordingMode;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CapabilityDecision {
@@ -66,6 +66,37 @@ pub struct AepRecord {
     pub signature: Option<AepSignature>,
 }
 
+/// MCP 2026-07-28 stateless/handle-based trace-correlation fields.
+///
+/// Bundles the correlation signals threaded through an intercepted request so
+/// that [`AepRecord::build_evidence_record`] stays below clippy's
+/// `too_many_arguments` threshold while keeping the stateless correlation model
+/// explicit. This is the validated trace-correlation model for the MCP
+/// 2026-07-28 stateless/handle-based spec.
+///
+/// # Field precedence (MCP 2026-07-28 stateless model)
+///
+/// - `handle_id` is the primary cross-request correlation key (threaded by the
+///   model between tool calls); prefer it over `trace_id`.
+/// - `mcp_protocol_version`, when present, indicates MCP traffic and forces the
+///   record's `session_id` to `None` (protocol-level sessions no longer exist).
+/// - `trace_id` (e.g. `x-b3-traceid`) is implementation-specific and may not
+///   span a full conversation context under the stateless model.
+#[derive(Debug, Clone, Default)]
+pub struct TraceCorrelation {
+    /// Zipkin/OpenTelemetry trace ID (implementation-specific; NOT part of MCP).
+    pub trace_id: Option<String>,
+    /// MCP handle ID — primary cross-request correlation key under the
+    /// stateless/handle-based model.
+    pub handle_id: Option<String>,
+    /// MCP protocol version header (e.g. `2026-07-28`).
+    pub mcp_protocol_version: Option<String>,
+    /// MCP JSON-RPC method name (e.g. `tools/call`, `resources/read`).
+    pub mcp_method: Option<String>,
+    /// MCP tool or resource name (e.g. `search`).
+    pub mcp_name: Option<String>,
+}
+
 impl AepRecord {
     /// The schema version constant used by the AEP evidence format.
     pub const SCHEMA_VERSION: &'static str = "aep/v0.1";
@@ -90,33 +121,22 @@ impl AepRecord {
     ///   state.
     pub fn build_evidence_record(
         action: ActionEvidence,
-        trace_id: Option<String>,
-        handle_id: Option<String>,
-        mcp_protocol_version: Option<String>,
-        mcp_method: Option<String>,
-        mcp_name: Option<String>,
+        correlation: TraceCorrelation,
         run_id: String,
         created_at_ms: u64,
     ) -> Self {
-        // Under MCP 2026-07-28 stateless model, when MCP protocol is declared
-        // the session-level state no longer exists — session_id is forced None.
-        let session_id: Option<String> = if mcp_protocol_version.is_some() {
-            None
-        } else {
-            // For non-MCP traffic, session_id might be provided, but is not
-            // part of this builder's contract — always None for stateless.
-            None
-        };
-
+        // Under the MCP 2026-07-28 stateless model, protocol-level session
+        // state no longer exists, so `session_id` is always `None`; the handle
+        // ID in `correlation` is the primary cross-request correlation key.
         AepRecord {
             schema_version: Self::SCHEMA_VERSION.into(),
             run_id,
-            trace_id,
-            handle_id,
-            session_id,
-            mcp_protocol_version,
-            mcp_method,
-            mcp_name,
+            trace_id: correlation.trace_id,
+            handle_id: correlation.handle_id,
+            session_id: None,
+            mcp_protocol_version: correlation.mcp_protocol_version,
+            mcp_method: correlation.mcp_method,
+            mcp_name: correlation.mcp_name,
             actions: vec![action],
             created_at_ms,
             signature: None,
@@ -228,11 +248,13 @@ mod tests {
 
         let record = AepRecord::build_evidence_record(
             action.clone(),
-            Some("trace-abc".into()),
-            Some("hdl-42".into()),
-            Some("2026-07-28".into()),
-            Some("tools/call".into()),
-            Some("search".into()),
+            TraceCorrelation {
+                trace_id: Some("trace-abc".into()),
+                handle_id: Some("hdl-42".into()),
+                mcp_protocol_version: Some("2026-07-28".into()),
+                mcp_method: Some("tools/call".into()),
+                mcp_name: Some("search".into()),
+            },
             "run-999".into(),
             1700000000004,
         );
@@ -270,11 +292,10 @@ mod tests {
 
         let record = AepRecord::build_evidence_record(
             action.clone(),
-            Some("trace-xyz".into()),
-            None,
-            None,
-            None,
-            None,
+            TraceCorrelation {
+                trace_id: Some("trace-xyz".into()),
+                ..Default::default()
+            },
             "run-888".into(),
             1700000000006,
         );
