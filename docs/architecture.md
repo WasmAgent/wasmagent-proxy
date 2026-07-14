@@ -16,6 +16,7 @@
 │  │     ├── Reads :method, :path from request headers     │  │
 │  │     ├── Extracts x-b3-traceid, x-agent-id headers      │  │
 │  │     ├── Calls infer_side_effect_class(method, path)    │  │
+│  │     ├── Classifies MCP-Method / MCP-Name headers       │  │
 │  │     ├── Builds RiskContext → compile_recording_policy   │  │
 │  │     ├── Produces ActionEvidence with recording_mode    │  │
 │  │     └── Sets x-aep-recording-mode response header      │  │
@@ -54,6 +55,9 @@ Key responsibilities:
 
 - **Request interception** — reads HTTP method, path, trace ID, and agent ID
   from incoming request headers via `on_http_request_headers`.
+- **MCP header risk classification** — during `on_http_request_headers`,
+  inspects the `MCP-Method` and `MCP-Name` headers for credential patterns,
+  high-entropy values, and PII (email-like) leakage signals.
 - **Response decoration** — during `on_http_response_headers`, classifies the
   request's side-effects, builds an `ActionEvidence` record, and sets the
   `x-aep-recording-mode` response header so downstream services can observe
@@ -73,8 +77,9 @@ Key types:
 | `RecordingMode` | Enum: `validation`, `delta`, `full` — how much evidence to capture |
 | `SideEffectClass` | Enum: `read`, `mutate_local`, `mutate_external`, `network_egress`, `unknown` |
 | `RiskContext` | Struct: `was_vetted`, `has_consent_anomaly`, `taint_chain_length`, `side_effect_class` |
+| `McpHeaderRisk` | Struct: credential/high-entropy/PII signals from MCP request headers |
 | `RecordingPolicy` | Output of `compile_recording_policy` — a `mode` + human-readable `reason` |
-| `ActionEvidence` | Single action's evidence: action ID, tool name, state-changing flag, digests, recording mode |
+| `ActionEvidence` | Single action's evidence: action ID, tool name, state-changing flag, digests, recording mode, optional MCP header risk |
 | `AepRecord` | Top-level record: schema version, run/trace/session IDs, list of actions, optional signature |
 | `AepSignature` | Ed25519 signature envelope: algorithm, key ID, hex-encoded signature |
 | `ProvGraph` | PROV-DM causal graph: activities, entities, agents with ancestry traversal |
@@ -86,20 +91,29 @@ Key types:
        │
 2. EvidenceFilter.on_http_request_headers()
    ├── Extract method, path, trace_id, agent_id
+   ├── Read MCP-Method and MCP-Name headers
+   ├── classify_mcp_headers(mcp_method, mcp_name)
+   │     └── Returns Some(McpHeaderRisk) if credentials/high-entropy/PII detected
+   │         (credential prefixes: ghp_, sk-, Bearer ; entropy: length > 32; PII: email-like)
        │
 3. EvidenceFilter.on_http_response_headers()
-   ├── infer_side_effect_class(method, path)
+   ├── resolve_side_effect_class(method, path)
    │     GET/HEAD/OPTIONS        → Read
    │     POST/PUT/PATCH/DELETE
    │       path contains /network/ or /webhook → NetworkEgress
    │       otherwise                     → MutateExternal
    │     other methods                   → Unknown
    │
+   ├── [MCP header risk escalation]
+   │     If McpHeaderRisk is present (leakage detected in step 2):
+   │       override side_effect_class → MutateExternal
+   │       Purpose: Full capture for forensic analysis of leaked sensitive data
+   │
    ├── Build RiskContext {
    │     was_vetted: false,
    │     has_consent_anomaly: false,
    │     taint_chain_length: 0,
-   │     side_effect_class: <above>
+   │     side_effect_class: <final from above>
    │   }
    │
    ├── compile_recording_policy(risk_ctx)
@@ -113,11 +127,21 @@ Key types:
    │       7. MutateLocal          → Delta  "local mutation, low risk"
    │       8. Read                 → Validation "read-only, no anomaly"
    │
-   ├── build_evidence(action_id, tool_name, risk_ctx, timestamp, digest)
-   │     → ActionEvidence { recording_mode, state_changing, ... }
+   ├── build_evidence(action_id, tool_name, risk_ctx, timestamp, digest, mcp_header_risk)
+   │     → ActionEvidence { recording_mode, state_changing, mcp_header_risk, ... }
    │
    └── set response header x-aep-recording-mode: "<RecordingMode>"
 ```
+
+### MCP header risk escalation
+
+When `classify_mcp_headers` detects a credential prefix, high-entropy value,
+or email-like pattern in the `MCP-Method` or `MCP-Name` request headers,
+the side-effect class is automatically escalated to `MutateExternal`. This
+ensures that `compile_recording_policy` produces `RecordingMode::Full`,
+capturing the full request and response for forensic analysis of the leaked
+sensitive data. The raw risk signals are also surfaced in the
+`x-aep-mcp-header-risk` response header.
 
 ## Ed25519 signing
 

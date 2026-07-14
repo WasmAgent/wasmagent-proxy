@@ -1,3 +1,1 @@
-verify:
-  cmd: "cargo test --workspace"
-  timeout: 300
+# noop

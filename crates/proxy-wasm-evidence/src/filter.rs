@@ -4,7 +4,7 @@ use proxy_wasm::types::*;
 use crate::config::PluginConfig;
 use crate::recorder::{build_evidence, classify_mcp_headers, resolve_side_effect_class};
 use aep_core::evidence::McpHeaderRisk;
-use aep_core::recording::RiskContext;
+use aep_core::recording::{RiskContext, SideEffectClass};
 
 pub struct EvidenceFilter {
     context_id: u32,
@@ -81,6 +81,18 @@ impl HttpContext for EvidenceFilter {
             &self.method,
             &self.path,
         );
+
+        // When MCP header risk is detected (credential/high-entropy/PII leakage in
+        // MCP-Method or MCP-Name headers), escalate the side-effect class to
+        // MutateExternal so that compile_recording_policy produces Full recording.
+        // This ensures the evidence system captures the full request/response for
+        // forensic analysis of the leaked sensitive data.
+        let side_effect_class = if self.mcp_header_risk.is_some() {
+            SideEffectClass::MutateExternal
+        } else {
+            side_effect_class
+        };
+
         let risk_ctx = RiskContext {
             was_vetted: false,
             has_consent_anomaly: false,

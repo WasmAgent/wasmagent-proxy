@@ -1,19 +1,13 @@
 #!/usr/bin/env python3
-"""Check_git helper for CI validation."""
 import subprocess
 import sys
 
-def main():
-    result = subprocess.run(["git", "diff", "--stat"], capture_output=True, text=True)
-    print(result.stdout)
-    if result.returncode != 0:
-        print(result.stderr)
-        sys.exit(1)
-    # Check if there are any changes
-    if result.stdout.strip():
-        print("Changes detected (non-empty diff)")
-    else:
-        print("No changes detected (empty diff)")
+result = subprocess.run(["git", "status", "--short"], capture_output=True, text=True, cwd="/srv/claude-bot/worktrees/WasmAgent_wasmagent-proxy")
+print("STDOUT:", result.stdout)
+print("STDERR:", result.stderr)
 
-if __name__ == "__main__":
-    main()
+result2 = subprocess.run(["git", "diff", "--stat"], capture_output=True, text=True, cwd="/srv/claude-bot/worktrees/WasmAgent_wasmagent-proxy")
+print("DIFF STAT:", result2.stdout)
+
+result3 = subprocess.run(["git", "log", "--oneline", "-5"], capture_output=True, text=True, cwd="/srv/claude-bot/worktrees/WasmAgent_wasmagent-proxy")
+print("LOG:", result3.stdout)
