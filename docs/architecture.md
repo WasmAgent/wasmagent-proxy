@@ -150,3 +150,65 @@ Both layers share the same `trace_id` (carried in the `x-b3-traceid` header) and
 the same AEP record schema. Combining their evidence produces a full causal graph
 from gateway ingress through to individual agent tool calls, consumed by
 [open-agent-audit](https://github.com/WasmAgent/open-agent-audit).
+
+## Boundary with identity and authorization layers
+
+### What wasmagent-proxy is and is not
+
+wasmagent-proxy is an **evidence and audit layer**. It observes traffic,
+classifies side-effects, and emits signed AEP records. It does **not** perform
+authorization decisions, token validation, or RBAC enforcement. Those concerns
+belong upstream in an identity-aware gateway.
+
+### Deployment model
+
+The recommended deployment stacks an identity-aware gateway in front of
+wasmagent-proxy. The identity gateway handles OAuth 2.0 token validation,
+tool-level RBAC, and policy-based routing; wasmagent-proxy captures evidence
+on all traffic that passes through:
+
+```
+ ┌──────────┐     ┌─────────────────────────────────────┐     ┌───────────┐
+ │ MCP      │────▶│ Identity-aware gateway              │────▶│ wasmagent │
+ │ Client   │     │                                     │     │ -proxy    │
+ │          │     │  • OAuth 2.0 token validation       │     │           │────▶ MCP Server
+ └──────────┘     │  • Tool-level RBAC                  │     │  • AEP    │
+                  │  • Policy-based routing              │     │    evidence│
+                  │                                     │     │    capture│
+                  │  (Kong AI Gateway, TrueFoundry,     │     │  • DSSE   │
+                  │   MCPX, Istio AuthorizationPolicy)  │     │    signing │
+                  └─────────────────────────────────────┘     └───────────┘
+```
+
+The identity gateway and wasmagent-proxy may coexist inside the same host
+(e.g., Envoy filter chain with an OAuth filter before the Wasm evidence filter)
+or run as separate proxies in sequence.
+
+### Capability boundary
+
+wasmagent-proxy can only observe traffic that passes through the gateway
+it is loaded into:
+
+- **In scope** — any HTTP request routed through the proxy host: MCP tool
+  calls, agent-to-server communication, A2A messages.
+- **Out of scope** — endpoint-local MCP servers that communicate
+  directly with their agent process without traversing the gateway. These
+  servers are invisible to wasmagent-proxy's evidence capture.
+
+Evidence completeness depends on traffic topology. Deploy wasmagent-proxy at
+a choke point that covers the paths you need to audit.
+
+### Complementary layers
+
+The wasmagent ecosystem provides evidence at multiple layers. The table below
+shows where wasmagent-proxy fits and which projects complement it:
+
+| Layer | Project | Role |
+|---|---|---|
+| Identity / Authorization | Kong AI Gateway, TrueFoundry, MCPX, Istio AuthorizationPolicy | OAuth token validation, RBAC, routing |
+| **Gateway evidence** | **wasmagent-proxy (this repo)** | **AEP evidence capture, side-effect classification, DSSE signing** |
+| Process-internal evidence | [wasmagent-js](https://github.com/WasmAgent/wasmagent-js) / `@wasmagent/mcp-firewall` | MCP tool-call evidence, capability enforcement |
+| Endpoint trust posture | [agent-trust-infra](https://github.com/WasmAgent/agent-trust-infra) | AgentBOM, MCP posture assessment, trust passport |
+
+wasmagent-proxy does not replace the identity layer or the endpoint layer — it
+adds an auditable evidence record of the traffic flowing between them.

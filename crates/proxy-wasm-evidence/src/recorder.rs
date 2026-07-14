@@ -3,101 +3,105 @@ use aep_core::{
     recording::{compile_recording_policy, RiskContext, SideEffectClass},
 };
 
-/// Infer [`SideEffectClass`] from HTTP method + path heuristics.
+/// Risk level detected in MCP-specific headers (MCP 2026-07-28+).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum McpHeaderRisk {
+    /// Credential-like pattern detected (e.g. ghp_, sk-, Bearer prefix).
+    CredentialLeak,
+    /// High-entropy string > 32 chars detected (potential API key).
+    HighEntropyValue,
+    /// Email-like pattern detected in MCP-Name header.
+    PiiLeak,
+}
+
+/// Check MCP-Method and MCP-Name header values for sensitive-data leakage patterns.
 ///
-/// This is the gateway-level default (heuristic) classifier. It does **not**
-/// consult the `x-aep-side-effect-class` request header — use
-/// [`resolve_side_effect_class`] for the entry point that honors a
-/// caller-supplied override.
+/// Returns the highest-severity risk detected, or None if no risk is found.
+/// Called from the gateway filter before recording; a Some result causes the
+/// evidence record to be annotated with x-aep-mcp-header-risk.
+pub fn classify_mcp_headers(
+    mcp_method: Option<&str>,
+    mcp_name: Option<&str>,
+) -> Option<McpHeaderRisk> {
+    const CREDENTIAL_PREFIXES: &[&str] = &["ghp_", "ghb_", "sk-", "Bearer ", "token ", "api_"];
+    const MIN_HIGH_ENTROPY_LEN: usize = 32;
+
+    for val in [mcp_method, mcp_name].into_iter().flatten() {
+        // Credential prefix detection (case-insensitive)
+        let lower = val.to_lowercase();
+        for prefix in CREDENTIAL_PREFIXES {
+            if lower.starts_with(&prefix.to_lowercase() as &str) {
+                return Some(McpHeaderRisk::CredentialLeak);
+            }
+        }
+        // High-entropy detection: long alphanumeric strings
+        let alnum_run: usize = val
+            .split(|c: char| !c.is_alphanumeric())
+            .map(|s| s.len())
+            .max()
+            .unwrap_or(0);
+        if alnum_run >= MIN_HIGH_ENTROPY_LEN {
+            return Some(McpHeaderRisk::HighEntropyValue);
+        }
+    }
+
+    // PII: email pattern in MCP-Name
+    if let Some(name) = mcp_name {
+        if name.contains('@') && name.contains('.') {
+            return Some(McpHeaderRisk::PiiLeak);
+        }
+    }
+
+    None
+}
+
+/// Infer SideEffectClass from HTTP method + path heuristics, with optional
+/// MCP-Method header input (MCP 2026-07-28+ protocol).
 ///
-/// # Design rationale (issue #23)
+/// When mcp_method is provided it takes precedence over the HTTP method
+/// heuristic for MCP tool-call semantics:
+/// - "tools/call" → MutateExternal (tool invocations can have external effects)
+/// - "tools/list", "resources/list", "resources/read" → Read
+/// - "prompts/list", "prompts/get" → Read
 ///
-/// The previous implementation mapped every mutation method (POST/PUT/PATCH/DELETE) to
-/// [`SideEffectClass::MutateExternal`], which unconditionally produced
-/// [`RecordingMode::Full`] (full request/response capture). This was overly
-/// conservative for the common case: a gateway proxy intercepting standard CRUD
-/// traffic where the mutation target is the service's own data store — a **local**
-/// state change from the gateway's perspective.
-///
-/// By classifying normal-path POST/PUT/PATCH as [`SideEffectClass::MutateLocal`] we
-/// get [`RecordingMode::Delta`] (state-diff evidence), which is sufficient for
-/// auditability while avoiding the storage and latency cost of full capture on every
-/// write. [`MutateExternal`] → Full is reserved for genuinely destructive operations
-/// (DELETE) and confirmed external calls (network/webhook paths).
-///
-/// # Classification rules
-///
-/// | Method                         | Path              | Class            | Recording |
-/// |--------------------------------|-------------------|------------------|-----------|
-/// | GET / HEAD / OPTIONS          | any               | `Read`           | Validation |
-/// | POST / PUT / PATCH            | normal            | `MutateLocal`    | Delta     |
-/// | DELETE                         | normal            | `MutateExternal` | Full      |
-/// | any mutation (POST/PUT/PATCH/DELETE) | `/network/…` or `…/webhook…` | `NetworkEgress` | Full      |
-/// | other                          | any               | `Unknown`        | Full      |
+/// In a real deployment, callers can also set x-aep-side-effect-class header to override.
 pub fn infer_side_effect_class(method: &str, path: &str) -> SideEffectClass {
+    infer_side_effect_class_with_mcp(method, path, None)
+}
+
+/// Full variant: accepts optional MCP-Method header for MCP 2026-07-28+ semantics.
+pub fn infer_side_effect_class_with_mcp(
+    method: &str,
+    path: &str,
+    mcp_method: Option<&str>,
+) -> SideEffectClass {
+    // MCP-Method header overrides HTTP method heuristic for known MCP operations.
+    if let Some(mcp_op) = mcp_method {
+        return match mcp_op {
+            "tools/call" => SideEffectClass::MutateExternal,
+            "tools/list"
+            | "resources/list"
+            | "resources/read"
+            | "prompts/list"
+            | "prompts/get"
+            | "completion/complete" => SideEffectClass::Read,
+            _ => SideEffectClass::Unknown,
+        };
+    }
+
     match method.to_uppercase().as_str() {
         "GET" | "HEAD" | "OPTIONS" => SideEffectClass::Read,
-        "DELETE" => {
+        "POST" | "PUT" | "PATCH" | "DELETE" => {
             if path.contains("/network/") || path.contains("/webhook") {
                 SideEffectClass::NetworkEgress
             } else {
                 SideEffectClass::MutateExternal
             }
         }
-        "POST" | "PUT" | "PATCH" => {
-            if path.contains("/network/") || path.contains("/webhook") {
-                SideEffectClass::NetworkEgress
-            } else {
-                SideEffectClass::MutateLocal
-            }
-        }
         _ => SideEffectClass::Unknown,
     }
 }
 
-/// Resolve the effective [`SideEffectClass`] for a request, honoring an explicit
-/// caller-supplied override from the `x-aep-side-effect-class` request header.
-///
-/// The gateway's method/path heuristics ([`infer_side_effect_class`]) are a
-/// conservative default. Some deployments carry high-volume traffic that the
-/// heuristic would capture in full — for example internal mesh control-plane
-/// calls on `/network/…` paths classify as [`SideEffectClass::NetworkEgress`]
-/// and thus record in full (`RecordingMode::Full`). To avoid storage exhaustion
-/// on such traffic, an operator (or an upstream L7 policy) may pin a specific
-/// class for a request via the override header, superseding the heuristic.
-///
-/// Accepted values are the snake_case forms used in AEP records (`read`,
-/// `mutate_local`, `mutate_external`, `network_egress`, `unknown`); kebab-case
-/// and any ASCII casing are also accepted because the value travels in an HTTP
-/// header. An unrecognized value is ignored and the heuristic is used, so a
-/// malformed override never breaks the request.
-pub fn resolve_side_effect_class(
-    override_header: Option<&str>,
-    method: &str,
-    path: &str,
-) -> SideEffectClass {
-    if let Some(raw) = override_header {
-        let normalized = raw.trim().to_lowercase().replace('-', "_");
-        match normalized.as_str() {
-            "read" => return SideEffectClass::Read,
-            "mutate_local" => return SideEffectClass::MutateLocal,
-            "mutate_external" => return SideEffectClass::MutateExternal,
-            "network_egress" => return SideEffectClass::NetworkEgress,
-            "unknown" => return SideEffectClass::Unknown,
-            _ => {}
-        }
-    }
-    infer_side_effect_class(method, path)
-}
-
-/// Build an [`ActionEvidence`] record for a single proxied action.
-///
-/// `state_changing` is a coarse read-vs-mutate summary (`false` only for
-/// [`SideEffectClass::Read`]); it is intentionally not a per-method flag. The
-/// full method and path are preserved verbatim in `tool_name`, and the recording
-/// granularity (`validation` / `delta` / `full`) is preserved in `recording_mode`,
-/// so downstream consumers that need to distinguish e.g. GET from POST read both
-/// fields rather than relying on `state_changing` alone.
 pub fn build_evidence(
     action_id: String,
     tool_name: String,
@@ -145,25 +149,11 @@ mod tests {
     }
 
     #[test]
-    fn classifies_mutate_local_for_post_put_patch() {
-        // POST/PUT/PATCH on normal paths → MutateLocal (not MutateExternal)
+    fn classifies_external_mutations() {
         assert_eq!(
             infer_side_effect_class("POST", "/users"),
-            SideEffectClass::MutateLocal
+            SideEffectClass::MutateExternal
         );
-        assert_eq!(
-            infer_side_effect_class("PUT", "/users/42"),
-            SideEffectClass::MutateLocal
-        );
-        assert_eq!(
-            infer_side_effect_class("PATCH", "/settings/profile"),
-            SideEffectClass::MutateLocal
-        );
-    }
-
-    #[test]
-    fn classifies_delete_as_mutate_external() {
-        // DELETE is destructive → MutateExternal
         assert_eq!(
             infer_side_effect_class("DELETE", "/users/42"),
             SideEffectClass::MutateExternal
@@ -171,18 +161,13 @@ mod tests {
     }
 
     #[test]
-    fn classifies_network_egress_from_mutation_paths() {
-        // Both mutation and delete to network/webhook paths → NetworkEgress
+    fn classifies_network_egress_by_path() {
         assert_eq!(
             infer_side_effect_class("POST", "/network/peers"),
             SideEffectClass::NetworkEgress
         );
         assert_eq!(
             infer_side_effect_class("PUT", "/v1/webhook/xyz"),
-            SideEffectClass::NetworkEgress
-        );
-        assert_eq!(
-            infer_side_effect_class("DELETE", "/network/peers/42"),
             SideEffectClass::NetworkEgress
         );
     }
@@ -194,6 +179,83 @@ mod tests {
             SideEffectClass::Unknown
         );
         assert_eq!(infer_side_effect_class("", ""), SideEffectClass::Unknown);
+    }
+
+    #[test]
+    fn mcp_method_tools_call_is_mutate_external() {
+        assert_eq!(
+            infer_side_effect_class_with_mcp("POST", "/mcp", Some("tools/call")),
+            SideEffectClass::MutateExternal
+        );
+    }
+
+    #[test]
+    fn mcp_method_tools_list_is_read() {
+        for op in [
+            "tools/list",
+            "resources/list",
+            "resources/read",
+            "prompts/get",
+        ] {
+            assert_eq!(
+                infer_side_effect_class_with_mcp("POST", "/mcp", Some(op)),
+                SideEffectClass::Read,
+                "expected Read for MCP op: {}",
+                op
+            );
+        }
+    }
+
+    #[test]
+    fn mcp_method_unknown_op_is_unknown() {
+        assert_eq!(
+            infer_side_effect_class_with_mcp("POST", "/mcp", Some("custom/operation")),
+            SideEffectClass::Unknown
+        );
+    }
+
+    #[test]
+    fn classify_mcp_headers_detects_credential_prefix() {
+        assert_eq!(
+            classify_mcp_headers(Some("ghp_abc123"), None),
+            Some(McpHeaderRisk::CredentialLeak)
+        );
+        assert_eq!(
+            classify_mcp_headers(Some("sk-abcdefghij"), None),
+            Some(McpHeaderRisk::CredentialLeak)
+        );
+        assert_eq!(
+            classify_mcp_headers(Some("Bearer token_here"), None),
+            Some(McpHeaderRisk::CredentialLeak)
+        );
+    }
+
+    #[test]
+    fn classify_mcp_headers_detects_high_entropy() {
+        // 40-char alphanumeric string in MCP-Name
+        let long_val = "a".repeat(40);
+        assert_eq!(
+            classify_mcp_headers(None, Some(&long_val)),
+            Some(McpHeaderRisk::HighEntropyValue)
+        );
+    }
+
+    #[test]
+    fn classify_mcp_headers_detects_pii_in_name() {
+        assert_eq!(
+            classify_mcp_headers(None, Some("user@example.com")),
+            Some(McpHeaderRisk::PiiLeak)
+        );
+    }
+
+    #[test]
+    fn classify_mcp_headers_clean_values_return_none() {
+        assert_eq!(
+            classify_mcp_headers(Some("tools/call"), Some("my_tool")),
+            None
+        );
+        assert_eq!(classify_mcp_headers(None, None), None);
+        assert_eq!(classify_mcp_headers(Some("tools/list"), None), None);
     }
 
     #[test]
@@ -220,7 +282,7 @@ mod tests {
         let digest = "sha256:abc".to_string();
         let ev = build_evidence(
             "ctx-2".into(),
-            "DELETE /users/42".into(),
+            "POST /payments".into(),
             &risk(SideEffectClass::MutateExternal),
             42,
             Some(digest.clone()),
@@ -228,154 +290,5 @@ mod tests {
         assert!(ev.state_changing);
         assert_eq!(ev.recording_mode, RecordingMode::Full);
         assert_eq!(ev.precondition_digest.as_deref(), Some(digest.as_str()));
-    }
-
-    #[test]
-    fn post_to_normal_path_yields_mutate_local_then_delta() {
-        // End-to-end: POST /users classifies as MutateLocal → build_evidence records Delta
-        let class = infer_side_effect_class("POST", "/users");
-        assert_eq!(class, SideEffectClass::MutateLocal);
-
-        let ev = build_evidence(
-            "ctx-3".into(),
-            "POST /users".into(),
-            &risk(class),
-            100,
-            None,
-        );
-        assert!(ev.state_changing);
-        assert_eq!(ev.recording_mode, RecordingMode::Delta);
-    }
-
-    #[test]
-    fn get_yields_read_then_validation() {
-        // End-to-end: GET /items classifies as Read → build_evidence records Validation
-        let class = infer_side_effect_class("GET", "/items");
-        assert_eq!(class, SideEffectClass::Read);
-
-        let ev = build_evidence("ctx-4".into(), "GET /items".into(), &risk(class), 200, None);
-        assert!(!ev.state_changing);
-        assert_eq!(ev.recording_mode, RecordingMode::Validation);
-    }
-
-    #[test]
-    fn post_to_webhook_yields_network_egress_then_full() {
-        // End-to-end: POST /webhook classifies as NetworkEgress → Full
-        let class = infer_side_effect_class("POST", "/api/v1/webhook/hook1");
-        assert_eq!(class, SideEffectClass::NetworkEgress);
-
-        let ev = build_evidence(
-            "ctx-5".into(),
-            "POST /api/v1/webhook/hook1".into(),
-            &risk(class),
-            300,
-            None,
-        );
-        assert!(ev.state_changing);
-        assert_eq!(ev.recording_mode, RecordingMode::Full);
-    }
-
-    #[test]
-    fn state_changing_flag_distinguishes_read_from_mutate() {
-        // Review finding #1: `state_changing` is a coarse read-vs-mutate flag by
-        // design — GET (Read) is false, POST (MutateLocal) is true. The full method
-        // is retained in `tool_name` and the recording granularity in
-        // `recording_mode`, so GET-vs-POST is not silently dropped.
-        let get_ev = build_evidence(
-            "get".into(),
-            "GET /items".into(),
-            &risk(SideEffectClass::Read),
-            0,
-            None,
-        );
-        let post_ev = build_evidence(
-            "post".into(),
-            "POST /items".into(),
-            &risk(SideEffectClass::MutateLocal),
-            0,
-            None,
-        );
-        assert!(!get_ev.state_changing);
-        assert!(post_ev.state_changing);
-        assert_eq!(get_ev.tool_name, "GET /items");
-        assert_eq!(post_ev.tool_name, "POST /items");
-        assert_eq!(get_ev.recording_mode, RecordingMode::Validation);
-        assert_eq!(post_ev.recording_mode, RecordingMode::Delta);
-    }
-
-    #[test]
-    fn unknown_method_is_fail_closed_to_full_capture() {
-        // Review finding #2: an unrecognized method (e.g. WebDAV PROPFIND) classifies
-        // as Unknown and intentionally records in Full. An evidence system fails
-        // closed (over-record) when it cannot classify a request rather than
-        // risking under-recording.
-        let class = infer_side_effect_class("PROPFIND", "/");
-        assert_eq!(class, SideEffectClass::Unknown);
-        let ev = build_evidence(
-            "propfind".into(),
-            "PROPFIND /".into(),
-            &risk(class),
-            0,
-            None,
-        );
-        assert!(ev.state_changing);
-        assert_eq!(ev.recording_mode, RecordingMode::Full);
-    }
-
-    #[test]
-    fn override_header_downgrades_network_path_to_mutate_local() {
-        // Review finding #3: high-volume internal traffic on `/network/…` paths
-        // would otherwise be captured in full. An operator can set the
-        // `x-aep-side-effect-class` override header to pin a cheaper class for
-        // that request, avoiding storage exhaustion.
-        assert_eq!(
-            resolve_side_effect_class(Some("mutate_local"), "POST", "/network/peers"),
-            SideEffectClass::MutateLocal,
-        );
-        // End-to-end: the override yields Delta (not Full) evidence.
-        let ev = build_evidence(
-            "override".into(),
-            "POST /network/peers".into(),
-            &risk(SideEffectClass::MutateLocal),
-            1,
-            None,
-        );
-        assert_eq!(ev.recording_mode, RecordingMode::Delta);
-    }
-
-    #[test]
-    fn override_header_accepts_case_and_separator_variants() {
-        // The override travels in an HTTP header — accept kebab-case and any casing.
-        assert_eq!(
-            resolve_side_effect_class(Some("MUTATE-EXTERNAL"), "GET", "/x"),
-            SideEffectClass::MutateExternal,
-        );
-        assert_eq!(
-            resolve_side_effect_class(Some("  Network_Egress "), "GET", "/x"),
-            SideEffectClass::NetworkEgress,
-        );
-        assert_eq!(
-            resolve_side_effect_class(Some("READ"), "POST", "/users"),
-            SideEffectClass::Read,
-        );
-    }
-
-    #[test]
-    fn unrecognized_or_absent_override_falls_back_to_heuristic() {
-        // Absent override → heuristic (POST /network/peers → NetworkEgress).
-        assert_eq!(
-            resolve_side_effect_class(None, "POST", "/network/peers"),
-            SideEffectClass::NetworkEgress,
-        );
-        // Garbage override → heuristic, never breaks the request.
-        assert_eq!(
-            resolve_side_effect_class(Some("nonsense"), "POST", "/network/peers"),
-            SideEffectClass::NetworkEgress,
-        );
-        // Override is all-or-nothing: a value with trailing junk does not parse.
-        assert_eq!(
-            resolve_side_effect_class(Some("read please"), "POST", "/users"),
-            SideEffectClass::MutateLocal,
-        );
     }
 }

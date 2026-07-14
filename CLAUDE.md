@@ -49,15 +49,36 @@ PATH=/root/.cargo/bin:$PATH cargo clippy --workspace -- -D warnings
 - All new code must have unit tests
 - Do not use doc-tests — they fail due to rustdoc PATH issue on VPS
 
+## Strategic positioning
+
+**Read `docs/strategy.md` before opening new issues or designing new features.**
+
+This project is NOT a general MCP gateway. Its defensible niche is:
+
+**"MCP-protocol-aware evidence and audit layer"** — a thin Proxy-Wasm plugin that sits
+alongside any existing gateway and produces cryptographically signed, post-incident
+auditable evidence records. It complements identity/auth layers (OAuth 2.1,
+audience-bound tokens), it does NOT compete with commercial MCP gateways (Kong,
+TrueFoundry, Lunar.dev) on routing, RBAC, or PII redaction.
+
+Key differentiation:
+1. **MCP-Method/MCP-Name header leakage detection** — credential/PII leak pattern
+   specific to the MCP 2026-07-28 spec that commercial gateways do not check.
+2. **PROV-DM signed evidence** — audit-grade tamper-evident records linking gateway
+   ingress to agent tool-call layer via shared `trace_id`.
+3. **Gateway-agnostic** — sidecar alongside any Proxy-Wasm host.
+
+**Capability boundary**: wasmagent-proxy only sees traffic that passes through it.
+It cannot observe endpoint-local MCP servers. Document this clearly.
 
 ## Key references
-
-Detailed documentation lives under `docs/` (see issue #14):
 
 | Reference | What it covers |
 |-----------|---------------|
 | `README.md` | Architecture, Proxy-Wasm design, configuration fields |
+| `docs/strategy.md` | **Strategic positioning, competitive landscape, differentiation** |
 | `docs/architecture.md` | System diagram, component responsibilities, AEP recording flow, Ed25519 signing |
+| `docs/mcp-protocol-compatibility.md` | MCP 2026-07-28 compatibility: stateless model, MCP-Method/MCP-Name headers, leakage detection |
 | `docs/deployment.md` | Envoy/Istio quickstart, K8s secret injection walkthrough |
 | `docs/configuration.md` | All config fields with types, defaults, and examples |
 | `docs/aep-evidence-format.md` | AEP record structure, side-effect classification, DSSE envelope |
@@ -80,13 +101,23 @@ co-located with source (lib.rs #[cfg(test)]).
 - 6 unit tests passing
 - Deploy configs: `deploy/envoy/envoy.yaml`, `deploy/istio/wasmplugin.yaml`, `deploy/k8s/signing-secret.yaml`
 - Benchmark skeleton: `benchmarks/latency_bench.rs`
+- MCP 2026-07-28 compatibility: stateless model documented (`docs/mcp-protocol-compatibility.md`),
+  MCP-Method classification, header leakage detection (`classify_mcp_headers`)
 
 ### In-progress ⚠️
 - Issue #12: `x-aep-recording-mode` response header not yet set
 - Issue #13: integration test (full request/response cycle)
+- Issue #23: EvidenceFilter HTTP side-effect classification bug (PRs #26, #27 open)
+- Issue #24: recording.rs / prov.rs / filter.rs unit tests (PR #28 open)
+- Issue #29: MCP-Method/MCP-Name leakage detection (PR #38 open)
+- Issue #30: architecture boundary docs (open)
+- Issue #31: MCP compat validation (PRs #35, #39 open)
 
 ### Open PRs
-- None (all PRs merged or closed)
+- PR #26, #27: Fix #23 — EvidenceFilter side-effect classification
+- PR #28: Fix #24 — unit tests for recording.rs/prov.rs/filter.rs
+- PR #35, #39: Fix #31 — MCP 2026-07-28 compat
+- PR #38: Fix #29 — MCP header leakage detection
 
 ## Roadmap
 
@@ -116,6 +147,14 @@ Bot: implement issues in order. When an issue closes, open the next unchecked it
 - [ ] feat: `aep-core` — AEP record serialization to JSON for downstream consumers
 - [ ] feat: metrics endpoint (Prometheus) — evidence volume, latency overhead, signing errors
 - [ ] perf: ring buffer for evidence accumulation (avoid per-request heap allocation)
+
+### Phase 6: MCP-aware security evidence layer
+- [ ] #23 fix: EvidenceFilter HTTP side-effect classification bug (PRs #26/#27 — pick one and land it)
+- [ ] #24 test: unit tests for recording.rs, prov.rs, filter.rs (PR #28)
+- [ ] #29 feat: `classify_mcp_headers()` — MCP-Method/MCP-Name leakage detection (PR #38)
+- [ ] #31 docs/test: MCP 2026-07-28 compat — validate trace correlation model (PRs #35/#39)
+- [ ] #30 docs: `docs/capability-boundary.md` — explicit statement of observable vs unobservable traffic
+- [ ] docs: expand architecture.md — relationship to OAuth 2.1/identity layers
 
 ## How patrol sweep drives progress
 Patrol reads this CLAUDE.md. Unchecked checkboxes → patrol opens issues with `claude` label.
