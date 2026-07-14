@@ -1,14 +1,14 @@
 # Bot State
 
-_Last updated: 2026-07-14 13:06 UTC by patrol_
+_Last updated: 2026-07-14 13:35 UTC by patrol_
 
 ## Queue
 
 | State | Count |
 |---|---|
-| Pending | 0 |
-| Active (running/reviewing) | 2 |
-| Blocked | 2 |
+| Pending | 2 |
+| Active (running/reviewing) | 0 |
+| Blocked | 1 |
 | Completed/Merged (all time) | 84 |
 
 ## Recent Activity (last 5)
@@ -23,7 +23,6 @@ _Last updated: 2026-07-14 13:06 UTC by patrol_
 
 ## Waiting for Human
 
-- #34: Fix WasmAgent/wasmagent-proxy#31 ([URGENT] mcp-compat: validate trace correlation model against MCP 2026-07-28 stateless
 - #30: docs: clarify architectural boundary with OAuth/identity layer and commercial MCP gateways
 - #29: feat: detect sensitive-data leakage in MCP-Method / MCP-Name HTTP headers (MCP 2026-07-28)
 - #23: EvidenceFilter does not correctly classify HTTP side-effect class
