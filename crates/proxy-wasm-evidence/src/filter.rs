@@ -2,6 +2,7 @@ use proxy_wasm::traits::*;
 use proxy_wasm::types::*;
 
 use crate::recorder::{build_evidence, infer_side_effect_class};
+use aep_core::evidence::TraceCorrelation;
 use aep_core::recording::RiskContext;
 
 /// Proxy-Wasm HTTP context that records AEP evidence for intercepted requests.
@@ -32,10 +33,11 @@ use aep_core::recording::RiskContext;
 /// and `mcp_handle_id` headers provide a more reliable per-request correlation
 /// mechanism aligned with the MCP 2026-07-28 spec.
 ///
-/// The filter echoes all MCP correlation headers as `x-aep-*` response headers
-/// so that downstream components (e.g. the wasmagent-js MCP firewall) can
-/// reconstruct a fully correlated `AepRecord` using
-/// [`AepRecord::build_evidence_record`].
+/// The filter validates the trace correlation model against the MCP 2026-07-28
+/// stateless/handle spec using [`TraceCorrelation::from_headers`] and echoes
+/// all MCP correlation headers as `x-aep-*` response headers so that downstream
+/// components (e.g. the wasmagent-js MCP firewall) can reconstruct a fully
+/// correlated `AepRecord` using [`AepRecord::build_evidence_record`].
 pub struct EvidenceFilter {
     context_id: u32,
     method: String,
@@ -47,20 +49,10 @@ pub struct EvidenceFilter {
     /// Caller-supplied agent identifier (implementation-specific; NOT part of
     /// the MCP protocol).
     agent_id: Option<String>,
-    /// MCP protocol version header (e.g. `2026-07-28`). Mandatory under the
-    /// MCP 2026-07-28 stateless/handle-based specification.
-    mcp_protocol_version: Option<String>,
-    /// MCP JSON-RPC method name (e.g. `tools/call`, `resources/read`).
-    /// Used as higher-signal input for side-effect classification.
-    mcp_method: Option<String>,
-    /// MCP tool or resource name (e.g. `search`). Used as additional
-    /// correlation signal under the stateless/handle-based model.
-    mcp_name: Option<String>,
-    /// MCP handle ID for stateless request correlation. Threaded by the model
-    /// between tool calls as arguments and carried in the `Mcp-Handle-Id`
-    /// header. Under MCP 2026-07-28 this is the primary correlation key;
-    /// preferred over `trace_id` for linking evidence records.
-    handle_id: Option<String>,
+    /// Validated MCP trace correlation (populated after header processing).
+    correlation: Option<TraceCorrelation>,
+    /// Validation error message, if any, from trace correlation validation.
+    correlation_error: Option<String>,
 }
 
 impl EvidenceFilter {
@@ -71,10 +63,8 @@ impl EvidenceFilter {
             path: String::new(),
             trace_id: None,
             agent_id: None,
-            mcp_protocol_version: None,
-            mcp_method: None,
-            mcp_name: None,
-            handle_id: None,
+            correlation: None,
+            correlation_error: None,
         }
     }
 }
@@ -91,11 +81,31 @@ impl HttpContext for EvidenceFilter {
         self.agent_id = self.get_http_request_header("x-agent-id");
 
         // MCP 2026-07-28 protocol headers (mandatory under stateless/handle spec).
-        self.mcp_protocol_version = self.get_http_request_header("MCP-Protocol-Version");
-        self.mcp_method = self.get_http_request_header("Mcp-Method");
-        self.mcp_name = self.get_http_request_header("Mcp-Name");
+        let mcp_protocol_version = self.get_http_request_header("MCP-Protocol-Version");
+        let mcp_method = self.get_http_request_header("Mcp-Method");
+        let mcp_name = self.get_http_request_header("Mcp-Name");
         // Handle ID is the primary correlation key under the stateless model.
-        self.handle_id = self.get_http_request_header("Mcp-Handle-Id");
+        let handle_id = self.get_http_request_header("Mcp-Handle-Id");
+
+        // Validate trace correlation against MCP 2026-07-28 stateless model.
+        match TraceCorrelation::from_headers(
+            self.trace_id.clone(),
+            handle_id.clone(),
+            mcp_protocol_version.clone(),
+            mcp_method.clone(),
+            mcp_name.clone(),
+        ) {
+            Ok(correlation) => {
+                self.correlation = Some(correlation);
+                self.correlation_error = None;
+            }
+            Err(e) => {
+                log::warn!("trace correlation validation failed: {}", e);
+                self.correlation = None;
+                self.correlation_error = Some(e);
+            }
+        }
+
         Action::Continue
     }
 
@@ -103,8 +113,25 @@ impl HttpContext for EvidenceFilter {
         // When MCP-Method is present, use it for higher-signal side-effect
         // classification (e.g. `tools/call` implies external mutation) instead
         // of falling back to HTTP method + path heuristics alone.
+        let mcp_method = self
+            .correlation
+            .as_ref()
+            .and_then(|c| c.mcp_method.as_deref());
+        let mcp_name = self
+            .correlation
+            .as_ref()
+            .and_then(|c| c.mcp_name.as_deref());
+        let handle_id = self
+            .correlation
+            .as_ref()
+            .and_then(|c| c.handle_id.as_deref());
+        let mcp_protocol_version = self
+            .correlation
+            .as_ref()
+            .and_then(|c| c.mcp_protocol_version.as_deref());
+
         let side_effect_class =
-            infer_side_effect_class(&self.method, &self.path, self.mcp_method.as_deref());
+            infer_side_effect_class(&self.method, &self.path, mcp_method);
         let risk_ctx = RiskContext {
             was_vetted: false,
             has_consent_anomaly: false,
@@ -114,10 +141,9 @@ impl HttpContext for EvidenceFilter {
         let action_id = format!("ctx-{}", self.context_id);
         // Prefer MCP tool name for evidence identification when available,
         // falling back to HTTP method + path.
-        let tool_name = self
-            .mcp_name
-            .clone()
-            .or_else(|| self.mcp_method.clone())
+        let tool_name = mcp_name
+            .map(String::from)
+            .or_else(|| mcp_method.map(String::from))
             .unwrap_or_else(|| format!("{} {}", self.method, self.path));
         let evidence = build_evidence(action_id, tool_name, &risk_ctx, 0, None);
         // Emit the canonical snake_case form (matching the `recording_mode` field
@@ -136,19 +162,19 @@ impl HttpContext for EvidenceFilter {
         // primary correlation mechanism, taking precedence over trace_id.
 
         // Echo the handle ID — the primary correlation key under stateless model.
-        if let Some(ref handle_id) = self.handle_id {
-            self.set_http_response_header("x-aep-handle-id", Some(handle_id));
+        if let Some(id) = handle_id {
+            self.set_http_response_header("x-aep-handle-id", Some(id));
         }
         // Echo the MCP protocol version when present.
-        if let Some(ref ver) = self.mcp_protocol_version {
+        if let Some(ver) = mcp_protocol_version {
             self.set_http_response_header("x-aep-mcp-protocol-version", Some(ver));
         }
         // Echo the MCP method name when present.
-        if let Some(ref method) = self.mcp_method {
+        if let Some(method) = mcp_method {
             self.set_http_response_header("x-aep-mcp-method", Some(method));
         }
         // Echo the MCP tool/resource name when present.
-        if let Some(ref name) = self.mcp_name {
+        if let Some(name) = mcp_name {
             self.set_http_response_header("x-aep-mcp-name", Some(name));
         }
         // Echo the trace ID for downstream correlation when present.
@@ -158,6 +184,12 @@ impl HttpContext for EvidenceFilter {
         // Echo the agent ID for downstream correlation when present.
         if let Some(ref agent_id) = self.agent_id {
             self.set_http_response_header("x-aep-agent-id", Some(agent_id));
+        }
+
+        // If trace correlation validation failed, emit a header indicating the
+        // validation error so downstream components are aware.
+        if let Some(ref err) = self.correlation_error {
+            self.set_http_response_header("x-aep-correlation-error", Some(err));
         }
 
         Action::Continue

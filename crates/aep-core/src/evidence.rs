@@ -106,9 +106,8 @@ impl TraceCorrelation {
     /// - If `mcp_protocol_version` is `Some`, it must equal `"2026-07-28"`.
     ///   This is the only protocol version supported by the stateless model.
     /// - Under the stateless model, `handle_id` is the primary correlation key;
-    ///   a warning is issued via `log::warn!` (if the `log` crate is available)
-    ///   when `trace_id` is present without `handle_id` while MCP protocol is
-    ///   declared.
+    ///   a warning is issued via `log::warn!` when `trace_id` is present
+    ///   without `handle_id` while MCP protocol is declared.
     ///
     /// # Returns
     ///
@@ -122,6 +121,16 @@ impl TraceCorrelation {
                     "unsupported MCP protocol version: {}, expected 2026-07-28",
                     ver
                 ));
+            }
+            // Under the stateless model, handle_id is the primary correlation
+            // key. Issue a warning when trace_id is present without handle_id.
+            if self.trace_id.is_some() && self.handle_id.is_none() {
+                log::warn!(
+                    "trace_id present without handle_id under MCP {}; \
+                     handle_id is the preferred correlation key under the \
+                     stateless/handle-based model",
+                    ver
+                );
             }
         }
         Ok(())
@@ -399,6 +408,19 @@ mod tests {
     fn trace_correlation_validate_accepts_no_version() {
         let tc = TraceCorrelation {
             trace_id: Some("xyz".into()),
+            ..Default::default()
+        };
+        assert!(tc.validate().is_ok());
+    }
+
+    #[test]
+    fn trace_correlation_validate_warns_on_trace_id_without_handle_id() {
+        // When MCP version is declared and trace_id is present without
+        // handle_id, validate() should succeed (the warning is informational).
+        let tc = TraceCorrelation {
+            trace_id: Some("abc".into()),
+            handle_id: None,
+            mcp_protocol_version: Some("2026-07-28".into()),
             ..Default::default()
         };
         assert!(tc.validate().is_ok());
