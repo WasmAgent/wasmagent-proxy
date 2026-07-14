@@ -24,6 +24,7 @@ pub struct ActionEvidence {
     pub capability_decision: Option<CapabilityDecision>,
     /// Risk label from MCP header analysis (e.g. `"credential_prefix:ghp_"`).
     /// `None` when MCP-Method / MCP-Name headers are absent or benign.
+    #[serde(default)]
     pub mcp_header_risk: Option<String>,
     /// MCP trace correlation — trace ID from the MCP 2026-07-28 stateless
     /// trace model.  Populated from the `mcp-trace-id` request header (falling
@@ -136,7 +137,8 @@ mod tests {
     }
 
     #[test]
-    fn action_evidence_deserializes_missing_trace_fields_as_none() {
+    fn action_evidence_deserializes_missing_optional_fields_as_none() {
+        // Old-style JSON without mcp_header_risk, trace_id, or session_id
         let json = r#"{
             "action_id": "a",
             "tool_name": "t",
@@ -145,6 +147,26 @@ mod tests {
             "recording_mode": "validation"
         }"#;
         let ev: ActionEvidence = serde_json::from_str(json).unwrap();
+        assert!(ev.mcp_header_risk.is_none());
+        assert!(ev.trace_id.is_none());
+        assert!(ev.session_id.is_none());
+    }
+
+    #[test]
+    fn action_evidence_deserializes_mcp_header_risk() {
+        let json = r#"{
+            "action_id": "a",
+            "tool_name": "t",
+            "state_changing": false,
+            "timestamp_ms": 0,
+            "recording_mode": "validation",
+            "mcp_header_risk": "credential_prefix:ghp_"
+        }"#;
+        let ev: ActionEvidence = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            ev.mcp_header_risk.as_deref(),
+            Some("credential_prefix:ghp_")
+        );
         assert!(ev.trace_id.is_none());
         assert!(ev.session_id.is_none());
     }
