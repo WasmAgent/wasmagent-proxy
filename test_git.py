@@ -1,0 +1,14 @@
+import subprocess
+import os
+os.chdir("/srv/claude-bot/worktrees/WasmAgent_wasmagent-proxy")
+result = subprocess.run(["git", "status", "--short"], capture_output=True, text=True)
+print("=== GIT STATUS ===")
+print(result.stdout)
+print(result.stderr)
+result2 = subprocess.run(["git", "diff", "--stat"], capture_output=True, text=True)
+print("=== GIT DIFF ===")
+print(result2.stdout)
+print(result2.stderr)
+result3 = subprocess.run(["git", "log", "--oneline", "-3"], capture_output=True, text=True)
+print("=== GIT LOG ===")
+print(result3.stdout)

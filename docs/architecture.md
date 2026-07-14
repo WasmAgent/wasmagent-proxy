@@ -131,7 +131,6 @@ Key types:
 
 Verification reverses the process: clone the record, strip the signature field,
 re-canonicalize, hash, and verify against the Ed25519 public key.
-
 The signing key is injected at deploy time (see [deployment.md](deployment.md)) and
 never hard-coded in the Wasm module.
 
@@ -152,6 +151,9 @@ from gateway ingress through to individual agent tool calls, consumed by
 [open-agent-audit](https://github.com/WasmAgent/open-agent-audit).
 
 ## Boundary with identity and authorization layers
+
+For a focused reference on the deployment model, capability boundary, and
+complementary layers, see [deployment-model.md](deployment-model.md).
 
 ### What wasmagent-proxy is and is not
 

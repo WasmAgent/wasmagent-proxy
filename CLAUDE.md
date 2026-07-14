@@ -78,6 +78,7 @@ It cannot observe endpoint-local MCP servers. Document this clearly.
 | `README.md` | Architecture, Proxy-Wasm design, configuration fields |
 | `docs/strategy.md` | **Strategic positioning, competitive landscape, differentiation** |
 | `docs/architecture.md` | System diagram, component responsibilities, AEP recording flow, Ed25519 signing |
+| `docs/deployment-model.md` | Architectural boundary with identity/OAuth layer, capability boundary, complementary layers |
 | `docs/mcp-protocol-compatibility.md` | MCP 2026-07-28 compatibility: stateless model, MCP-Method/MCP-Name headers, leakage detection |
 | `docs/deployment.md` | Envoy/Istio quickstart, K8s secret injection walkthrough |
 | `docs/configuration.md` | All config fields with types, defaults, and examples |
@@ -103,6 +104,8 @@ co-located with source (lib.rs #[cfg(test)]).
 - Benchmark skeleton: `benchmarks/latency_bench.rs`
 - MCP 2026-07-28 compatibility: stateless model documented (`docs/mcp-protocol-compatibility.md`),
   MCP-Method classification, header leakage detection (`classify_mcp_headers`)
+- #30 docs: architecture boundary with OAuth/identity layer and commercial MCP gateways
+  (`docs/deployment-model.md` created, `docs/architecture.md` updated with cross-reference)
 
 ### In-progress ⚠️
 - Issue #12: `x-aep-recording-mode` response header not yet set
@@ -110,7 +113,6 @@ co-located with source (lib.rs #[cfg(test)]).
 - Issue #23: EvidenceFilter HTTP side-effect classification bug (PRs #26, #27 open)
 - Issue #24: recording.rs / prov.rs / filter.rs unit tests (PR #28 open)
 - Issue #29: MCP-Method/MCP-Name leakage detection (PR #38 open)
-- Issue #30: architecture boundary docs (open)
 - Issue #31: MCP compat validation (PRs #35, #39 open)
 
 ### Open PRs
@@ -153,8 +155,8 @@ Bot: implement issues in order. When an issue closes, open the next unchecked it
 - [ ] #24 test: unit tests for recording.rs, prov.rs, filter.rs (PR #28)
 - [ ] #29 feat: `classify_mcp_headers()` — MCP-Method/MCP-Name leakage detection (PR #38)
 - [ ] #31 docs/test: MCP 2026-07-28 compat — validate trace correlation model (PRs #35/#39)
-- [ ] #30 docs: `docs/capability-boundary.md` — explicit statement of observable vs unobservable traffic
-- [ ] docs: expand architecture.md — relationship to OAuth 2.1/identity layers
+- [x] #30 docs: `docs/deployment-model.md` — architectural boundary with identity/OAuth layer and commercial MCP gateways
+- [x] docs: expand architecture.md — relationship to OAuth 2.1/identity layers
 
 ## How patrol sweep drives progress
 Patrol reads this CLAUDE.md. Unchecked checkboxes → patrol opens issues with `claude` label.
