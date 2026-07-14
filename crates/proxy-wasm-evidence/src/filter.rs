@@ -1,7 +1,7 @@
 use proxy_wasm::traits::*;
 use proxy_wasm::types::*;
 
-use crate::recorder::{build_evidence, classify_mcp_headers, infer_side_effect_class_with_mcp};
+use crate::recorder::{build_evidence, classify_mcp_headers, infer_side_effect_class};
 use aep_core::recording::RiskContext;
 
 pub struct EvidenceFilter {

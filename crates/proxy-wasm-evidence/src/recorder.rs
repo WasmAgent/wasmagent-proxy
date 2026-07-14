@@ -89,10 +89,20 @@ pub fn infer_side_effect_class_with_mcp(
         };
     }
 
+    // Network-egress path check applies to all state-changing methods.
+    let is_network_egress_path = path.contains("/network/") || path.contains("/webhook");
+
     match method.to_uppercase().as_str() {
         "GET" | "HEAD" | "OPTIONS" => SideEffectClass::Read,
-        "POST" | "PUT" | "PATCH" | "DELETE" => {
-            if path.contains("/network/") || path.contains("/webhook") {
+        "POST" | "PUT" | "PATCH" => {
+            if is_network_egress_path {
+                SideEffectClass::NetworkEgress
+            } else {
+                SideEffectClass::MutateLocal
+            }
+        }
+        "DELETE" => {
+            if is_network_egress_path {
                 SideEffectClass::NetworkEgress
             } else {
                 SideEffectClass::MutateExternal
@@ -149,11 +159,19 @@ mod tests {
     }
 
     #[test]
-    fn classifies_external_mutations() {
-        assert_eq!(
-            infer_side_effect_class("POST", "/users"),
-            SideEffectClass::MutateExternal
-        );
+    fn classifies_local_mutations() {
+        for method in ["POST", "PUT", "PATCH"] {
+            assert_eq!(
+                infer_side_effect_class(method, "/users"),
+                SideEffectClass::MutateLocal,
+                "expected MutateLocal for {} /users",
+                method
+            );
+        }
+    }
+
+    #[test]
+    fn classifies_external_deletions() {
         assert_eq!(
             infer_side_effect_class("DELETE", "/users/42"),
             SideEffectClass::MutateExternal
@@ -272,6 +290,25 @@ mod tests {
         assert_eq!(ev.action_id, "ctx-1");
         assert_eq!(ev.tool_name, "GET /x");
         assert_eq!(ev.timestamp_ms, 1_700_000_000_000);
+        assert!(ev.precondition_digest.is_none());
+        assert!(ev.result_digest.is_none());
+        assert!(ev.capability_decision.is_none());
+    }
+
+    #[test]
+    fn build_evidence_marks_local_mutation_as_state_changing_and_delta() {
+        let ev = build_evidence(
+            "ctx-3".into(),
+            "POST /api/data".into(),
+            &risk(SideEffectClass::MutateLocal),
+            1_700_000_000_001,
+            None,
+        );
+        assert!(ev.state_changing);
+        assert_eq!(ev.recording_mode, RecordingMode::Delta);
+        assert_eq!(ev.action_id, "ctx-3");
+        assert_eq!(ev.tool_name, "POST /api/data");
+        assert_eq!(ev.timestamp_ms, 1_700_000_000_001);
         assert!(ev.precondition_digest.is_none());
         assert!(ev.result_digest.is_none());
         assert!(ev.capability_decision.is_none());
