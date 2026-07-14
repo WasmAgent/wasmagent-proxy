@@ -73,12 +73,21 @@ impl McpHeaderRisk {
     }
 }
 
+/// Maximum byte length accepted for MCP header values before rejecting outright.
+/// Prevents unbounded heap allocation from maliciously oversized headers.
+const MAX_HEADER_VALUE_LEN: usize = 4096;
+
 /// Check a single header value for credential prefixes and high entropy.
 fn check_single_header(header_name: &'static str, value: &str) -> Option<McpHeaderRisk> {
-    // 1. Credential prefix check (case-insensitive)
-    let lower = value.to_lowercase();
+    // Reject oversized values early to prevent unbounded allocation.
+    if value.len() > MAX_HEADER_VALUE_LEN {
+        return None;
+    }
+
+    // 1. Credential prefix check (case-insensitive, zero-allocation via
+    //    eq_ignore_ascii_case on the truncated slice).
     for prefix in CREDENTIAL_PREFIXES {
-        if lower.starts_with(&prefix.to_lowercase()) {
+        if value.get(..prefix.len()).is_some_and(|v| v.eq_ignore_ascii_case(prefix)) {
             return Some(McpHeaderRisk::CredentialPrefix {
                 header: header_name,
                 prefix: prefix.to_string(),
