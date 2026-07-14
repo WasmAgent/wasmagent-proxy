@@ -15,6 +15,18 @@ pub struct PluginConfig {
     pub trace_id_header: String,
     /// Agent identity header (e.g. x-agent-id).
     pub agent_id_header: String,
+    /// Optional trust token for the `x-aep-side-effect-class` override header.
+    ///
+    /// If set, the `x-aep-side-effect-class` request header is only honored when
+    /// the request also carries an `x-aep-override-token` header whose value
+    /// matches this token. This prevents untrusted downstream clients from
+    /// downgrading the evidence recording mode.
+    ///
+    /// When `None` (the default), the override header is ignored entirely —
+    /// the side-effect class is always determined by the method/path heuristic.
+    /// Set this to a shared secret to enable the override feature in deployments
+    /// where an upstream proxy can inject the matching token header.
+    pub override_trust_token: Option<String>,
 }
 
 impl Default for PluginConfig {
@@ -25,6 +37,7 @@ impl Default for PluginConfig {
             signing_key_hex: None,
             trace_id_header: "x-b3-traceid".into(),
             agent_id_header: "x-agent-id".into(),
+            override_trust_token: None,
         }
     }
 }

@@ -50,6 +50,7 @@ pub struct ActionEvidence {
     pub capability_decision: Option<CapabilityDecision>,
     /// Present when the MCP-Method or MCP-Name request header contained a
     /// value that looks like a credential, high-entropy secret, or PII.
+    #[serde(default)]
     pub mcp_header_risk: Option<McpHeaderRisk>,
 }
 

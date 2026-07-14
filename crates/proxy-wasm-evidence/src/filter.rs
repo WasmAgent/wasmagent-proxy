@@ -1,6 +1,7 @@
 use proxy_wasm::traits::*;
 use proxy_wasm::types::*;
 
+use crate::config::PluginConfig;
 use crate::recorder::{build_evidence, classify_mcp_headers, resolve_side_effect_class};
 use aep_core::evidence::McpHeaderRisk;
 use aep_core::recording::RiskContext;
@@ -41,10 +42,24 @@ impl HttpContext for EvidenceFilter {
         self.path = self.get_http_request_header(":path").unwrap_or_default();
         self.trace_id = self.get_http_request_header("x-b3-traceid");
         self.agent_id = self.get_http_request_header("x-agent-id");
+
         // Per-request override of the side-effect heuristic (see
         // `resolve_side_effect_class`). Recognized values are the snake_case
         // SideEffectClass variants; an unrecognized value is ignored.
-        self.side_effect_override = self.get_http_request_header("x-aep-side-effect-class");
+        //
+        // SECURITY: This header is trusted only if the plugin configuration
+        // includes an `override_trust_token` AND the request carries a matching
+        // `x-aep-override-token` header. Without trust validation, any downstream
+        // client could set `x-aep-side-effect-class` to downgrade the evidence
+        // recording mode. When `override_trust_token` is not configured, the
+        // override is silently ignored — the side-effect class is always
+        // determined by the method/path heuristic.
+        let raw_override = self.get_http_request_header("x-aep-side-effect-class");
+        self.side_effect_override = if is_override_trusted(self, raw_override.is_some()) {
+            raw_override
+        } else {
+            None
+        };
 
         // Read MCP 2026-07-28 protocol-specific headers for sensitive-data
         // leakage detection.
@@ -106,5 +121,46 @@ impl HttpContext for EvidenceFilter {
         }
 
         Action::Continue
+    }
+}
+
+/// Check whether the `x-aep-side-effect-class` override header can be trusted.
+///
+/// Returns `true` when:
+/// - No override header is present (trivially trusted — nothing to validate).
+/// - The plugin configuration has an `override_trust_token` AND the request
+///   carries a matching `x-aep-override-token` header.
+///
+/// Returns `false` when:
+/// - An override header IS present but `override_trust_token` is not configured
+///   (the override feature is disabled by default for security).
+/// - An override header IS present and the `x-aep-override-token` header either
+///   is absent or does not match the configured trust token.
+fn is_override_trusted(ctx: &impl Context, has_override: bool) -> bool {
+    if !has_override {
+        // No override to validate — trivially trusted.
+        return true;
+    }
+
+    // Try to load the plugin configuration.
+    let config: PluginConfig = ctx
+        .get_plugin_configuration()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default();
+
+    match config.override_trust_token {
+        Some(ref token) if !token.is_empty() => {
+            // Trust token is configured — require a matching request header.
+            let request_token = ctx
+                .get_http_request_header("x-aep-override-token")
+                .unwrap_or_default();
+            request_token == *token
+        }
+        _ => {
+            // Trust token is NOT configured — override is disabled by default.
+            // This is the secure default: clients cannot downgrade evidence
+            // unless the operator explicitly enables the feature.
+            false
+        }
     }
 }
