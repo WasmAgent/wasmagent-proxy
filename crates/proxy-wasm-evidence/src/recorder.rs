@@ -87,7 +87,10 @@ fn check_single_header(header_name: &'static str, value: &str) -> Option<McpHead
     // 1. Credential prefix check (case-insensitive, zero-allocation via
     //    eq_ignore_ascii_case on the truncated slice).
     for prefix in CREDENTIAL_PREFIXES {
-        if value.get(..prefix.len()).is_some_and(|v| v.eq_ignore_ascii_case(prefix)) {
+        if value
+            .get(..prefix.len())
+            .is_some_and(|v| v.eq_ignore_ascii_case(prefix))
+        {
             return Some(McpHeaderRisk::CredentialPrefix {
                 header: header_name,
                 prefix: prefix.to_string(),
