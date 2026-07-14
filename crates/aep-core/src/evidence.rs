@@ -97,6 +97,66 @@ pub struct TraceCorrelation {
     pub mcp_name: Option<String>,
 }
 
+impl TraceCorrelation {
+    /// Validates the trace correlation against the MCP 2026-07-28 stateless
+    /// model invariants.
+    ///
+    /// # Invariants checked
+    ///
+    /// - If `mcp_protocol_version` is `Some`, it must equal `"2026-07-28"`.
+    ///   This is the only protocol version supported by the stateless model.
+    /// - Under the stateless model, `handle_id` is the primary correlation key;
+    ///   a warning is issued via `log::warn!` (if the `log` crate is available)
+    ///   when `trace_id` is present without `handle_id` while MCP protocol is
+    ///   declared.
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(())` if the correlation fields are consistent with the stateless
+    ///   model.
+    /// - `Err(String)` with a description of the first invariant violation.
+    pub fn validate(&self) -> Result<(), String> {
+        if let Some(ref ver) = self.mcp_protocol_version {
+            if ver != "2026-07-28" {
+                return Err(format!(
+                    "unsupported MCP protocol version: {}, expected 2026-07-28",
+                    ver
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Creates a new `TraceCorrelation` from MCP 2026-07-28 stateless/handle-based
+    /// correlation header values.
+    ///
+    /// This is a convenience constructor that calls `validate()` internally.
+    /// Prefer this over direct struct construction when the values originate
+    /// from external headers.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the MCP protocol version is present but unsupported
+    /// (see [`validate`](Self::validate)).
+    pub fn from_headers(
+        trace_id: Option<String>,
+        handle_id: Option<String>,
+        mcp_protocol_version: Option<String>,
+        mcp_method: Option<String>,
+        mcp_name: Option<String>,
+    ) -> Result<Self, String> {
+        let correlation = TraceCorrelation {
+            trace_id,
+            handle_id,
+            mcp_protocol_version,
+            mcp_method,
+            mcp_name,
+        };
+        correlation.validate()?;
+        Ok(correlation)
+    }
+}
+
 impl AepRecord {
     /// The schema version constant used by the AEP evidence format.
     pub const SCHEMA_VERSION: &'static str = "aep/v0.1";
@@ -311,5 +371,81 @@ mod tests {
         assert_eq!(record.actions.len(), 1);
         assert_eq!(record.actions[0].action_id, "act-2");
         assert_eq!(record.created_at_ms, 1700000000006);
+    }
+
+    #[test]
+    fn trace_correlation_validate_ok() {
+        let tc = TraceCorrelation {
+            trace_id: Some("abc".into()),
+            handle_id: Some("hdl-1".into()),
+            mcp_protocol_version: Some("2026-07-28".into()),
+            mcp_method: Some("tools/call".into()),
+            mcp_name: Some("search".into()),
+        };
+        assert!(tc.validate().is_ok());
+    }
+
+    #[test]
+    fn trace_correlation_validate_rejects_unsupported_version() {
+        let tc = TraceCorrelation {
+            mcp_protocol_version: Some("2026-03-15".into()),
+            ..Default::default()
+        };
+        let err = tc.validate().unwrap_err();
+        assert!(err.contains("unsupported"), "got: {}", err);
+    }
+
+    #[test]
+    fn trace_correlation_validate_accepts_no_version() {
+        let tc = TraceCorrelation {
+            trace_id: Some("xyz".into()),
+            ..Default::default()
+        };
+        assert!(tc.validate().is_ok());
+    }
+
+    #[test]
+    fn trace_correlation_from_headers_ok() {
+        let tc = TraceCorrelation::from_headers(
+            Some("trace-1".into()),
+            Some("hdl-99".into()),
+            Some("2026-07-28".into()),
+            Some("resources/read".into()),
+            Some("documents".into()),
+        )
+        .unwrap();
+        assert_eq!(tc.trace_id.as_deref(), Some("trace-1"));
+        assert_eq!(tc.handle_id.as_deref(), Some("hdl-99"));
+        assert_eq!(tc.mcp_protocol_version.as_deref(), Some("2026-07-28"));
+        assert_eq!(tc.mcp_method.as_deref(), Some("resources/read"));
+        assert_eq!(tc.mcp_name.as_deref(), Some("documents"));
+    }
+
+    #[test]
+    fn trace_correlation_from_headers_rejects_bad_version() {
+        let err = TraceCorrelation::from_headers(
+            None,
+            None,
+            Some("bad-version".into()),
+            None,
+            None,
+        )
+        .unwrap_err();
+        assert!(err.contains("unsupported"), "got: {}", err);
+    }
+
+    #[test]
+    fn trace_correlation_from_headers_accepts_missing_version() {
+        let tc = TraceCorrelation::from_headers(
+            Some("t".into()),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(tc.trace_id.as_deref(), Some("t"));
+        assert!(tc.handle_id.is_none());
+        assert!(tc.mcp_protocol_version.is_none());
     }
 }

@@ -3,7 +3,7 @@ pub mod prov;
 pub mod recording;
 pub mod signing;
 
-pub use evidence::{ActionEvidence, AepRecord, CapabilityDecision};
+pub use evidence::{ActionEvidence, AepRecord, CapabilityDecision, TraceCorrelation};
 pub use prov::{ProvActivity, ProvAgent, ProvEntity, ProvGraph};
 pub use recording::{compile_recording_policy, RecordingMode, RecordingPolicy, RiskContext};
 pub use signing::{sign_record, verify_record, SigningKey};
