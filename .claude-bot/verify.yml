@@ -1,3 +1,7 @@
-verify:
-  cmd: "PATH=/root/.cargo/bin:$PATH cargo test --workspace --lib && PATH=/root/.cargo/bin:$PATH cargo clippy --workspace -- -D warnings"
-  timeout: 300
+commands:
+  - name: cargo-test
+    cmd: "PATH=/root/.cargo/bin:$PATH cargo test --workspace --lib"
+    timeout: 5m
+  - name: cargo-clippy
+    cmd: "PATH=/root/.cargo/bin:$PATH cargo clippy --workspace -- -D warnings"
+    timeout: 3m
