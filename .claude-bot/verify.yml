@@ -1,3 +1,10 @@
-verify:
-  cmd: "cargo test --workspace"
-  timeout: 300
+# wasmagent-proxy verify manifest
+commands:
+  - name: cargo-test
+    cmd: "PATH=/root/.cargo/bin:$PATH cargo test --workspace --lib"
+    timeout: 5m
+    level: 3
+  - name: cargo-clippy
+    cmd: "PATH=/root/.cargo/bin:$PATH cargo clippy --workspace -- -D warnings"
+    timeout: 3m
+    level: 2
