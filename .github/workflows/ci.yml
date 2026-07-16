@@ -25,3 +25,14 @@ jobs:
       run: cargo test --workspace --lib
     - name: cargo clippy
       run: cargo clippy --workspace -- -D warnings
+
+  wasm-build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: wasm32-wasip1
+    - name: Build Wasm module
+      run: cargo build -p proxy-wasm-evidence --target wasm32-wasip1 --release

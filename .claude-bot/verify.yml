@@ -1,1 +1,3 @@
-# noop
+verify:
+  - PATH=/root/.cargo/bin:$PATH cargo test --workspace --lib
+  - PATH=/root/.cargo/bin:$PATH cargo clippy --workspace -- -D warnings

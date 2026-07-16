@@ -2,12 +2,22 @@
 import subprocess
 import sys
 
-result = subprocess.run(["git", "status", "--short"], capture_output=True, text=True, cwd="/srv/claude-bot/worktrees/WasmAgent_wasmagent-proxy")
-print("STDOUT:", result.stdout)
-print("STDERR:", result.stderr)
+cwd = "/srv/claude-bot/worktrees/WasmAgent_wasmagent-proxy"
 
-result2 = subprocess.run(["git", "diff", "--stat"], capture_output=True, text=True, cwd="/srv/claude-bot/worktrees/WasmAgent_wasmagent-proxy")
-print("DIFF STAT:", result2.stdout)
+result = subprocess.run(["git", "status", "--short"], capture_output=True, text=True, cwd=cwd)
+print("=== STATUS ===")
+print(result.stdout)
+if result.stderr:
+    print("STDERR:", result.stderr)
 
-result3 = subprocess.run(["git", "log", "--oneline", "-5"], capture_output=True, text=True, cwd="/srv/claude-bot/worktrees/WasmAgent_wasmagent-proxy")
-print("LOG:", result3.stdout)
+result2 = subprocess.run(["git", "diff", "--stat"], capture_output=True, text=True, cwd=cwd)
+print("=== DIFF ===")
+print(result2.stdout)
+
+result3 = subprocess.run(["git", "log", "--oneline", "-5"], capture_output=True, text=True, cwd=cwd)
+print("=== LOG ===")
+print(result3.stdout)
+
+result4 = subprocess.run(["git", "branch", "-a"], capture_output=True, text=True, cwd=cwd)
+print("=== BRANCH ===")
+print(result4.stdout)
