@@ -79,8 +79,12 @@ pub fn infer_side_effect_class_with_mcp(
     if let Some(mcp_op) = mcp_method {
         return match mcp_op {
             "tools/call" => SideEffectClass::MutateExternal,
-            "tools/list" | "resources/list" | "resources/read"
-            | "prompts/list" | "prompts/get" | "completion/complete" => SideEffectClass::Read,
+            "tools/list"
+            | "resources/list"
+            | "resources/read"
+            | "prompts/list"
+            | "prompts/get"
+            | "completion/complete" => SideEffectClass::Read,
             _ => SideEffectClass::Unknown,
         };
     }
@@ -137,25 +141,43 @@ mod tests {
     #[test]
     fn classifies_read_methods() {
         for method in ["GET", "head", "OpTiOnS"] {
-            assert_eq!(infer_side_effect_class(method, "/anything"), SideEffectClass::Read);
+            assert_eq!(
+                infer_side_effect_class(method, "/anything"),
+                SideEffectClass::Read
+            );
         }
     }
 
     #[test]
     fn classifies_external_mutations() {
-        assert_eq!(infer_side_effect_class("POST", "/users"), SideEffectClass::MutateExternal);
-        assert_eq!(infer_side_effect_class("DELETE", "/users/42"), SideEffectClass::MutateExternal);
+        assert_eq!(
+            infer_side_effect_class("POST", "/users"),
+            SideEffectClass::MutateExternal
+        );
+        assert_eq!(
+            infer_side_effect_class("DELETE", "/users/42"),
+            SideEffectClass::MutateExternal
+        );
     }
 
     #[test]
     fn classifies_network_egress_by_path() {
-        assert_eq!(infer_side_effect_class("POST", "/network/peers"), SideEffectClass::NetworkEgress);
-        assert_eq!(infer_side_effect_class("PUT", "/v1/webhook/xyz"), SideEffectClass::NetworkEgress);
+        assert_eq!(
+            infer_side_effect_class("POST", "/network/peers"),
+            SideEffectClass::NetworkEgress
+        );
+        assert_eq!(
+            infer_side_effect_class("PUT", "/v1/webhook/xyz"),
+            SideEffectClass::NetworkEgress
+        );
     }
 
     #[test]
     fn classifies_unknown_methods() {
-        assert_eq!(infer_side_effect_class("PROPFIND", "/"), SideEffectClass::Unknown);
+        assert_eq!(
+            infer_side_effect_class("PROPFIND", "/"),
+            SideEffectClass::Unknown
+        );
         assert_eq!(infer_side_effect_class("", ""), SideEffectClass::Unknown);
     }
 
@@ -169,7 +191,12 @@ mod tests {
 
     #[test]
     fn mcp_method_tools_list_is_read() {
-        for op in ["tools/list", "resources/list", "resources/read", "prompts/get"] {
+        for op in [
+            "tools/list",
+            "resources/list",
+            "resources/read",
+            "prompts/get",
+        ] {
             assert_eq!(
                 infer_side_effect_class_with_mcp("POST", "/mcp", Some(op)),
                 SideEffectClass::Read,
@@ -223,7 +250,10 @@ mod tests {
 
     #[test]
     fn classify_mcp_headers_clean_values_return_none() {
-        assert_eq!(classify_mcp_headers(Some("tools/call"), Some("my_tool")), None);
+        assert_eq!(
+            classify_mcp_headers(Some("tools/call"), Some("my_tool")),
+            None
+        );
         assert_eq!(classify_mcp_headers(None, None), None);
         assert_eq!(classify_mcp_headers(Some("tools/list"), None), None);
     }

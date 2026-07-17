@@ -1,7 +1,9 @@
 use proxy_wasm::traits::*;
 use proxy_wasm::types::*;
 
-use crate::recorder::{build_evidence, classify_mcp_headers, infer_side_effect_class_with_mcp};
+use crate::recorder::{
+    build_evidence, classify_mcp_headers, infer_side_effect_class, infer_side_effect_class_with_mcp,
+};
 use aep_core::recording::RiskContext;
 
 pub struct EvidenceFilter {
@@ -36,7 +38,7 @@ impl Context for EvidenceFilter {}
 impl HttpContext for EvidenceFilter {
     fn on_http_request_headers(&mut self, _num_headers: usize, _end_of_stream: bool) -> Action {
         self.method = self.get_http_request_header(":method").unwrap_or_default();
-        self.path   = self.get_http_request_header(":path").unwrap_or_default();
+        self.path = self.get_http_request_header(":path").unwrap_or_default();
         self.trace_id = self.get_http_request_header("x-b3-traceid");
         self.agent_id = self.get_http_request_header("x-agent-id");
         Action::Continue
