@@ -1,25 +1,25 @@
 # Bot State
 
-_Last updated: 2026-07-17 10:34 UTC by patrol_
+_Last updated: 2026-07-17 11:12 UTC by patrol_
 
 ## Queue
 
 | State | Count |
 |---|---|
-| Pending | 12 |
-| Active (running/reviewing) | 0 |
-| Blocked | 6 |
-| Completed/Merged (all time) | 101 |
+| Pending | 16 |
+| Active (running/reviewing) | 1 |
+| Blocked | 0 |
+| Completed/Merged (all time) | 102 |
 
 ## Recent Activity (last 5)
 
 | Issue | Title | Outcome | Date |
 |---|---|---|---|
+| #23 | EvidenceFilter does not correctly classify HTTP side-effe... | merged/auto_closed_resolved | 2026-07-17 |
 | #30 | docs: clarify architectural boundary with OAuth/identity ... | merged/auto_closed_resolved | 2026-07-17 |
 | #64 | [milestone Milestone 3 ] Add `deploy/k8s/configmap.yaml` ... | completed/operator_implemented | 2026-07-17 |
 | #64 | [milestone Milestone 3 ] Add `deploy/k8s/configmap.yaml` ... | completed/operator_implemented | 2026-07-17 |
 | #69 | [milestone Milestone 4 ] Add `benchmarks/latency_bench.rs... | merged/auto_closed_resolved | 2026-07-16 |
-| #65 | [milestone Milestone 3 ] Update `docs/deployment.md`: add... | merged/auto_closed_resolved | 2026-07-16 |
 
 ## Waiting for Human
 
