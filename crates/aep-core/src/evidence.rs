@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::recording::RecordingMode;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CapabilityDecision {
