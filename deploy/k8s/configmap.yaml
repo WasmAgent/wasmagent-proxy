@@ -1,0 +1,39 @@
+# Reference ConfigMap for wasmagent-proxy.
+#
+# The proxy reads a single JSON object (see docs/configuration.md) via the
+# Proxy-Wasm root context at module init. config.json below is a ready-to-fork
+# template: it contains the two commonly-set fields at their defaults, and every
+# other documented field is described in the comments so operators can add them
+# without guessing the structure.
+#
+# JSON does not support inline comments, so field docs live in these YAML
+# comments rather than inside config.json.
+#
+# Documented fields (field: type = default — description):
+#   default_mode:    string = "validation"  fallback recording mode; one of
+#                                            "validation" | "delta" | "full".
+#   key_id:          string = "default"      key id embedded in the Ed25519
+#                                            signature envelope; use a unique id
+#                                            per environment.
+#   signing_key_hex: string = (none)         Ed25519 private key, 64 hex chars.
+#                                            SECRET — never set here; inject via
+#                                            K8s Secret (see signing-secret.yaml).
+#                                            Signing is skipped when empty.
+#   trace_id_header: string = "x-b3-traceid" request header for the distributed
+#                                            trace ID (-> trace_id in AEP records).
+#   agent_id_header: string = "x-agent-id"   request header for the agent id
+#                                            (-> agent_id in AEP records).
+#
+# To customize: add any of the above keys to the JSON object below. Example:
+#   "trace_id_header": "traceparent"
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wasmagent-proxy-config
+  namespace: default
+data:
+  config.json: |
+    {
+      "default_mode": "validation",
+      "key_id": "default"
+    }
