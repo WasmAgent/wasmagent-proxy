@@ -1,6 +1,6 @@
 # Bot State
 
-_Last updated: 2026-07-18 10:45 UTC by patrol_
+_Last updated: 2026-07-18 11:11 UTC by patrol_
 
 ## Queue
 
@@ -9,15 +9,15 @@ _Last updated: 2026-07-18 10:45 UTC by patrol_
 | Pending | 9 |
 | Active (running/reviewing) | 0 |
 | Blocked | 4 |
-| Completed/Merged (all time) | 112 |
+| Completed/Merged (all time) | 113 |
 
 ## Recent Activity (last 5)
 
 | Issue | Title | Outcome | Date |
 |---|---|---|---|
 | #53 | [milestone Milestone 1 ] Run `cargo test --workspace` and... | completed/maintenance_done | 2026-07-18 |
-| #92 | [milestone Milestone 2] Implement classify_mcp_headers() ... | merged/auto_closed_resolved | 2026-07-18 |
 | #53 | [milestone Milestone 1 ] Run `cargo test --workspace` and... | completed/maintenance_done | 2026-07-18 |
+| #92 | [milestone Milestone 2] Implement classify_mcp_headers() ... | merged/auto_closed_resolved | 2026-07-18 |
 | #53 | [milestone Milestone 1 ] Run `cargo test --workspace` and... | completed/maintenance_done | 2026-07-18 |
 | #53 | [milestone Milestone 1 ] Run `cargo test --workspace` and... | completed/maintenance_done | 2026-07-18 |
 
