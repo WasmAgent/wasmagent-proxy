@@ -1,6 +1,6 @@
 # Bot State
 
-_Last updated: 2026-07-18 08:09 UTC by patrol_
+_Last updated: 2026-07-18 08:47 UTC by patrol_
 
 ## Queue
 
@@ -8,8 +8,8 @@ _Last updated: 2026-07-18 08:09 UTC by patrol_
 |---|---|
 | Pending | 14 |
 | Active (running/reviewing) | 1 |
-| Blocked | 0 |
-| Completed/Merged (all time) | 106 |
+| Blocked | 2 |
+| Completed/Merged (all time) | 107 |
 
 ## Recent Activity (last 5)
 
@@ -18,11 +18,12 @@ _Last updated: 2026-07-18 08:09 UTC by patrol_
 | #53 | [milestone Milestone 1 ] Run `cargo test --workspace` and... | completed/maintenance_done | 2026-07-18 |
 | #53 | [milestone Milestone 1 ] Run `cargo test --workspace` and... | completed/maintenance_done | 2026-07-18 |
 | #53 | [milestone Milestone 1 ] Run `cargo test --workspace` and... | completed/maintenance_done | 2026-07-18 |
+| #53 | [milestone Milestone 1 ] Run `cargo test --workspace` and... | completed/maintenance_done | 2026-07-18 |
 | #76 | [milestone Milestone 1 ] Add WasmAgent/wasmagent-proxy re... | merged/auto_closed_resolved | 2026-07-18 |
-| #23 | EvidenceFilter does not correctly classify HTTP side-effe... | merged/auto_closed_resolved | 2026-07-17 |
 
 ## Waiting for Human
 
+- #90: [milestone Milestone 2] Implement `mcp_header_risk` field in AEP evidence format
 - #86: [milestone Milestone 1] Add mcp_method and mcp_name fields to evidence struct in crates/proxy-wasm-evidence/src/filter.rs
 - #85: [milestone Milestone 4] Extract and export compile_recording_policy() for external testing
 - #83: [milestone Milestone 1] Refactor signing.rs functions to return Result types instead of bool
@@ -32,7 +33,6 @@ _Last updated: 2026-07-18 08:09 UTC by patrol_
 - #70: [milestone Milestone 4 ] Add `crates/proxy-wasm-evidence/src/filter.rs` Prometheus counter increments: em...
 - #68: [milestone Milestone 4 ] Add `crates/proxy-wasm-evidence/src/config.rs` `Config::max_evidence_buffer` fie...
 - #67: [milestone Milestone 4 ] Add `crates/proxy-wasm-evidence/src/recorder.rs` bounded ring-buffer for in-flig...
-- #59: [milestone Milestone 2 ] Update `docs/aep-evidence-format.md`: add \
 
 ---
 _Maintained automatically by claude-bot-go patrol. Do not edit._
