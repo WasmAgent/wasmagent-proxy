@@ -1,25 +1,25 @@
 # Bot State
 
-_Last updated: 2026-07-18 07:14 UTC by patrol_
+_Last updated: 2026-07-18 07:39 UTC by patrol_
 
 ## Queue
 
 | State | Count |
 |---|---|
-| Pending | 13 |
-| Active (running/reviewing) | 1 |
-| Blocked | 2 |
-| Completed/Merged (all time) | 104 |
+| Pending | 15 |
+| Active (running/reviewing) | 0 |
+| Blocked | 0 |
+| Completed/Merged (all time) | 105 |
 
 ## Recent Activity (last 5)
 
 | Issue | Title | Outcome | Date |
 |---|---|---|---|
 | #53 | [milestone Milestone 1 ] Run `cargo test --workspace` and... | completed/maintenance_done | 2026-07-18 |
+| #53 | [milestone Milestone 1 ] Run `cargo test --workspace` and... | completed/maintenance_done | 2026-07-18 |
 | #76 | [milestone Milestone 1 ] Add WasmAgent/wasmagent-proxy re... | merged/auto_closed_resolved | 2026-07-18 |
 | #23 | EvidenceFilter does not correctly classify HTTP side-effe... | merged/auto_closed_resolved | 2026-07-17 |
 | #30 | docs: clarify architectural boundary with OAuth/identity ... | merged/auto_closed_resolved | 2026-07-17 |
-| #64 | [milestone Milestone 3 ] Add `deploy/k8s/configmap.yaml` ... | completed/operator_implemented | 2026-07-17 |
 
 ## Waiting for Human
 
