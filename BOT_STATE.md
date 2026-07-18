@@ -1,14 +1,14 @@
 # Bot State
 
-_Last updated: 2026-07-18 03:46 UTC by patrol_
+_Last updated: 2026-07-18 04:17 UTC by patrol_
 
 ## Queue
 
 | State | Count |
 |---|---|
-| Pending | 17 |
+| Pending | 19 |
 | Active (running/reviewing) | 0 |
-| Blocked | 1 |
+| Blocked | 0 |
 | Completed/Merged (all time) | 103 |
 
 ## Recent Activity (last 5)
@@ -28,11 +28,11 @@ _Last updated: 2026-07-18 03:46 UTC by patrol_
 - #68: [milestone Milestone 4 ] Add `crates/proxy-wasm-evidence/src/config.rs` `Config::max_evidence_buffer` fie...
 - #67: [milestone Milestone 4 ] Add `crates/proxy-wasm-evidence/src/recorder.rs` bounded ring-buffer for in-flig...
 - #66: [milestone Milestone 4 ] Add `RiskContext` builder to `crates/aep-core/src/recording.rs`: `RiskContext::b...
-- #62: [milestone Milestone 3 ] Add `docs/capability-boundary.md`: explicit statement that wasmagent-proxy canno...
 - #61: [milestone Milestone 3 ] Add `crates/aep-core/src/prov.rs` unit tests: add at least one node and one edge...
 - #60: [milestone Milestone 3 ] Add `crates/aep-core/src/evidence.rs` `AepRecord` serialization round-trip test:...
 - #59: [milestone Milestone 2 ] Update `docs/aep-evidence-format.md`: add \
 - #57: [milestone Milestone 2 ] Update `on_http_response_headers()` in `crates/proxy-wasm-evidence/src/filter.rs...
+- #56: [milestone Milestone 2 ] Update `build_evidence()` in `crates/proxy-wasm-evidence/src/recorder.rs`: accep...
 
 ---
 _Maintained automatically by claude-bot-go patrol. Do not edit._
