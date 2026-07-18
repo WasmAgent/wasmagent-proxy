@@ -1,15 +1,15 @@
 # Bot State
 
-_Last updated: 2026-07-18 14:39 UTC by patrol_
+_Last updated: 2026-07-18 15:09 UTC by patrol_
 
 ## Queue
 
 | State | Count |
 |---|---|
-| Pending | 12 |
-| Active (running/reviewing) | 1 |
+| Pending | 13 |
+| Active (running/reviewing) | 0 |
 | Blocked | 3 |
-| Completed/Merged (all time) | 119 |
+| Completed/Merged (all time) | 121 |
 
 ## Recent Activity (last 5)
 
@@ -23,6 +23,7 @@ _Last updated: 2026-07-18 14:39 UTC by patrol_
 
 ## Waiting for Human
 
+- #97: [milestone Milestone 4 ] Add `benchmarks/latency_bench.rs` criterion benchmark for `compile_recording_pol...
 - #86: [milestone Milestone 1] Add mcp_method and mcp_name fields to evidence struct in crates/proxy-wasm-evidence/src/filter.rs
 - #85: [milestone Milestone 4] Extract and export compile_recording_policy() for external testing
 - #83: [milestone Milestone 1] Refactor signing.rs functions to return Result types instead of bool
@@ -32,7 +33,6 @@ _Last updated: 2026-07-18 14:39 UTC by patrol_
 - #70: [milestone Milestone 4 ] Add `crates/proxy-wasm-evidence/src/filter.rs` Prometheus counter increments: em...
 - #68: [milestone Milestone 4 ] Add `crates/proxy-wasm-evidence/src/config.rs` `Config::max_evidence_buffer` fie...
 - #67: [milestone Milestone 4 ] Add `crates/proxy-wasm-evidence/src/recorder.rs` bounded ring-buffer for in-flig...
-- #57: [milestone Milestone 2 ] Update `on_http_response_headers()` in `crates/proxy-wasm-evidence/src/filter.rs...
 
 ---
 _Maintained automatically by claude-bot-go patrol. Do not edit._
