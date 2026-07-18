@@ -1,14 +1,14 @@
 # Bot State
 
-_Last updated: 2026-07-18 04:44 UTC by patrol_
+_Last updated: 2026-07-18 06:35 UTC by patrol_
 
 ## Queue
 
 | State | Count |
 |---|---|
-| Pending | 18 |
-| Active (running/reviewing) | 1 |
-| Blocked | 0 |
+| Pending | 16 |
+| Active (running/reviewing) | 0 |
+| Blocked | 3 |
 | Completed/Merged (all time) | 103 |
 
 ## Recent Activity (last 5)
@@ -23,16 +23,16 @@ _Last updated: 2026-07-18 04:44 UTC by patrol_
 
 ## Waiting for Human
 
+- #86: [milestone Milestone 1] Add mcp_method and mcp_name fields to evidence struct in crates/proxy-wasm-evidence/src/filter.rs
+- #85: [milestone Milestone 4] Extract and export compile_recording_policy() for external testing
+- #83: [milestone Milestone 1] Refactor signing.rs functions to return Result types instead of bool
+- #80: [milestone Milestone 4 ] Add `benchmarks/latency_bench.rs` criterion benchmark for `compile_recording_pol...
+- #79: [milestone Milestone 1 ] Fix `crates/proxy-wasm-evidence/src/filter.rs` `on_http_request_headers()`: capt...
+- #77: [milestone Milestone 1] Add missing MCP operation test cases in recorder.rs
 - #71: [milestone Milestone 4 ] Update `docs/deployment.md`: add \
 - #70: [milestone Milestone 4 ] Add `crates/proxy-wasm-evidence/src/filter.rs` Prometheus counter increments: em...
 - #68: [milestone Milestone 4 ] Add `crates/proxy-wasm-evidence/src/config.rs` `Config::max_evidence_buffer` fie...
 - #67: [milestone Milestone 4 ] Add `crates/proxy-wasm-evidence/src/recorder.rs` bounded ring-buffer for in-flig...
-- #66: [milestone Milestone 4 ] Add `RiskContext` builder to `crates/aep-core/src/recording.rs`: `RiskContext::b...
-- #61: [milestone Milestone 3 ] Add `crates/aep-core/src/prov.rs` unit tests: add at least one node and one edge...
-- #60: [milestone Milestone 3 ] Add `crates/aep-core/src/evidence.rs` `AepRecord` serialization round-trip test:...
-- #59: [milestone Milestone 2 ] Update `docs/aep-evidence-format.md`: add \
-- #57: [milestone Milestone 2 ] Update `on_http_response_headers()` in `crates/proxy-wasm-evidence/src/filter.rs...
-- #56: [milestone Milestone 2 ] Update `build_evidence()` in `crates/proxy-wasm-evidence/src/recorder.rs`: accep...
 
 ---
 _Maintained automatically by claude-bot-go patrol. Do not edit._
