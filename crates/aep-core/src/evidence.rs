@@ -43,7 +43,7 @@ pub struct ActionEvidence {
     pub causal_chain_id: Option<String>,
     pub recording_mode: RecordingMode,
     pub capability_decision: Option<CapabilityDecision>,
-    pub mcp_header_risk: Option<String>,
+    pub mcp_header_risk: Option<McpHeaderRisk>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,7 +81,7 @@ mod tests {
             causal_chain_id: None,
             recording_mode: RecordingMode::Full,
             capability_decision: None,
-            mcp_header_risk: Some("CredentialLeak".into()),
+            mcp_header_risk: Some(McpHeaderRisk::CredentialLeak),
         };
 
         let value = serde_json::to_value(evidence).expect("serialize ActionEvidence");
