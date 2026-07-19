@@ -1,7 +1,7 @@
 use proxy_wasm::traits::*;
 use proxy_wasm::types::*;
 
-use crate::recorder::{build_evidence, classify_mcp_headers, infer_side_effect_class};
+use crate::recorder::{build_evidence, classify_mcp_headers, infer_side_effect_class_with_mcp};
 use aep_core::recording::RiskContext;
 
 pub struct EvidenceFilter {
@@ -45,7 +45,8 @@ impl HttpContext for EvidenceFilter {
     }
 
     fn on_http_response_headers(&mut self, _num_headers: usize, _end_of_stream: bool) -> Action {
-        let side_effect_class = infer_side_effect_class(&self.method, &self.path);
+        let side_effect_class =
+            infer_side_effect_class_with_mcp(&self.method, &self.path, self.mcp_method.as_deref());
         let risk_ctx = RiskContext {
             was_vetted: false,
             has_consent_anomaly: false,
@@ -55,14 +56,14 @@ impl HttpContext for EvidenceFilter {
         let mcp_header_risk = classify_mcp_headers(self.mcp_method.as_deref(), self.mcp_name.as_deref());
         let action_id = format!("ctx-{}", self.context_id);
         let tool_name = format!("{} {}", self.method, self.path);
-        let evidence = build_evidence(action_id, tool_name, &risk_ctx, 0, None, mcp_header_risk.clone());
+        let evidence = build_evidence(action_id, tool_name, &risk_ctx, 0, None, mcp_header_risk);
         // Emit the canonical snake_case form (matching the `recording_mode` field
         // serialized into AEP records) rather than the Debug-format PascalCase.
         self.set_http_response_header(
             "x-aep-recording-mode",
             Some(evidence.recording_mode.as_str()),
         );
-        if let Some(ref risk) = mcp_header_risk {
+        if let Some(ref risk) = evidence.mcp_header_risk {
             self.set_http_response_header("x-aep-mcp-header-risk", Some(risk.as_str()));
         }
         Action::Continue
