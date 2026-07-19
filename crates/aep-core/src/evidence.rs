@@ -69,9 +69,9 @@ pub struct ActionEvidence {
     pub causal_chain_id: Option<String>,
     pub recording_mode: RecordingMode,
     pub capability_decision: Option<CapabilityDecision>,
-    /// Detected MCP header leakage risk, serialized as a snake_case variant name
-    /// on the wire (e.g. `"credential_leak"`). `None` when no leakage is detected.
-    pub mcp_header_risk: Option<McpHeaderRisk>,
+    /// Detected MCP header leakage risk as the snake_case `McpHeaderRisk` variant
+    /// name (e.g. `"credential_leak"`). `None` when no leakage is detected.
+    pub mcp_header_risk: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,16 +116,15 @@ mod tests {
     fn mcp_header_risk_none_serializes_absent_or_null() {
         let ev = minimal_evidence();
         let json = serde_json::to_string(&ev).unwrap();
-        // When None, serde serializes Option<McpHeaderRisk> as null
+        // When None, serde serializes Option<String> as null
         assert!(json.contains("\"mcp_header_risk\":null"));
     }
 
     #[test]
     fn mcp_header_risk_some_serializes_snake_case() {
         let mut ev = minimal_evidence();
-        ev.mcp_header_risk = Some(McpHeaderRisk::CredentialLeak);
+        ev.mcp_header_risk = Some(McpHeaderRisk::CredentialLeak.as_snake_case().into());
         let json = serde_json::to_string(&ev).unwrap();
-        // Typed enum serializes as the snake_case variant name via rename_all.
         assert!(json.contains("\"mcp_header_risk\":\"credential_leak\""));
     }
 
@@ -137,7 +136,7 @@ mod tests {
             (McpHeaderRisk::PiiLeak, "pii_leak"),
         ] {
             let mut ev = minimal_evidence();
-            ev.mcp_header_risk = Some(variant.clone());
+            ev.mcp_header_risk = Some(variant.as_snake_case().into());
             let json = serde_json::to_string(&ev).unwrap();
             assert!(
                 json.contains(&format!("\"mcp_header_risk\":\"{snake}\"")),
@@ -146,8 +145,8 @@ mod tests {
             );
             let back: ActionEvidence = serde_json::from_str(&json).unwrap();
             assert_eq!(
-                back.mcp_header_risk,
-                Some(variant),
+                back.mcp_header_risk.as_deref(),
+                Some(snake),
                 "roundtrip failed for \"{snake}\""
             );
         }
