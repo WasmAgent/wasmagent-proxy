@@ -1,6 +1,17 @@
 use crate::recording::RecordingMode;
 use serde::{Deserialize, Serialize};
 
+/// Risk level detected in MCP-specific headers (MCP 2026-07-28+).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum McpHeaderRisk {
+    /// Credential-like pattern detected (e.g. ghp_, sk-, Bearer prefix).
+    CredentialLeak,
+    /// High-entropy string > 32 chars detected (potential API key).
+    HighEntropyValue,
+    /// Email-like pattern detected in MCP-Name header.
+    PiiLeak,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CapabilityDecision {
     pub capability: String,
@@ -22,6 +33,7 @@ pub struct ActionEvidence {
     pub causal_chain_id: Option<String>,
     pub recording_mode: RecordingMode,
     pub capability_decision: Option<CapabilityDecision>,
+    pub mcp_header_risk: Option<McpHeaderRisk>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

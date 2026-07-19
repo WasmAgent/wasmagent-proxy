@@ -1,18 +1,8 @@
 use aep_core::{
     evidence::ActionEvidence,
     recording::{compile_recording_policy, RiskContext, SideEffectClass},
+    McpHeaderRisk,
 };
-
-/// Risk level detected in MCP-specific headers (MCP 2026-07-28+).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum McpHeaderRisk {
-    /// Credential-like pattern detected (e.g. ghp_, sk-, Bearer prefix).
-    CredentialLeak,
-    /// High-entropy string > 32 chars detected (potential API key).
-    HighEntropyValue,
-    /// Email-like pattern detected in MCP-Name header.
-    PiiLeak,
-}
 
 /// Check MCP-Method and MCP-Name header values for sensitive-data leakage patterns.
 ///
@@ -108,6 +98,7 @@ pub fn build_evidence(
     risk_ctx: &RiskContext,
     timestamp_ms: u64,
     precondition_digest: Option<String>,
+    mcp_header_risk: Option<McpHeaderRisk>,
 ) -> ActionEvidence {
     let policy = compile_recording_policy(risk_ctx);
     ActionEvidence {
@@ -121,6 +112,7 @@ pub fn build_evidence(
         causal_chain_id: None,
         recording_mode: policy.mode,
         capability_decision: None,
+        mcp_header_risk,
     }
 }
 
@@ -266,6 +258,7 @@ mod tests {
             &risk(SideEffectClass::Read),
             1_700_000_000_000,
             None,
+            None,
         );
         assert!(!ev.state_changing);
         assert_eq!(ev.recording_mode, RecordingMode::Validation);
@@ -275,6 +268,7 @@ mod tests {
         assert!(ev.precondition_digest.is_none());
         assert!(ev.result_digest.is_none());
         assert!(ev.capability_decision.is_none());
+        assert!(ev.mcp_header_risk.is_none());
     }
 
     #[test]
@@ -286,9 +280,34 @@ mod tests {
             &risk(SideEffectClass::MutateExternal),
             42,
             Some(digest.clone()),
+            None,
         );
         assert!(ev.state_changing);
         assert_eq!(ev.recording_mode, RecordingMode::Full);
         assert_eq!(ev.precondition_digest.as_deref(), Some(digest.as_str()));
+        assert!(ev.mcp_header_risk.is_none());
+    }
+
+    #[test]
+    fn build_evidence_assigns_mcp_header_risk() {
+        let ev = build_evidence(
+            "ctx-3".into(),
+            "POST /mcp".into(),
+            &risk(SideEffectClass::MutateExternal),
+            100,
+            None,
+            Some(McpHeaderRisk::CredentialLeak),
+        );
+        assert_eq!(ev.mcp_header_risk, Some(McpHeaderRisk::CredentialLeak));
+
+        let ev2 = build_evidence(
+            "ctx-4".into(),
+            "GET /safe".into(),
+            &risk(SideEffectClass::Read),
+            200,
+            None,
+            Some(McpHeaderRisk::PiiLeak),
+        );
+        assert_eq!(ev2.mcp_header_risk, Some(McpHeaderRisk::PiiLeak));
     }
 }
