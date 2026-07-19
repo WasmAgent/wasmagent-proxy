@@ -113,14 +113,25 @@ mod tests {
             ev.mcp_header_risk = Some(snake.to_string());
             let json = serde_json::to_string(&ev).unwrap();
             let back: ActionEvidence = serde_json::from_str(&json).unwrap();
-            assert_eq!(back.mcp_header_risk, Some(snake.to_string()), "roundtrip failed for {}", name);
+            assert_eq!(
+                back.mcp_header_risk,
+                Some(snake.to_string()),
+                "roundtrip failed for {}",
+                name
+            );
         }
     }
 
     #[test]
     fn mcp_header_risk_as_snake_case_matches_variant_names() {
-        assert_eq!(McpHeaderRisk::CredentialLeak.as_snake_case(), "credential_leak");
-        assert_eq!(McpHeaderRisk::HighEntropyValue.as_snake_case(), "high_entropy_value");
+        assert_eq!(
+            McpHeaderRisk::CredentialLeak.as_snake_case(),
+            "credential_leak"
+        );
+        assert_eq!(
+            McpHeaderRisk::HighEntropyValue.as_snake_case(),
+            "high_entropy_value"
+        );
         assert_eq!(McpHeaderRisk::PiiLeak.as_snake_case(), "pii_leak");
     }
 }
