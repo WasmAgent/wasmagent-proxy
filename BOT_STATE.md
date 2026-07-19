@@ -1,6 +1,6 @@
 # Bot State
 
-_Last updated: 2026-07-19 06:32 UTC by patrol_
+_Last updated: 2026-07-19 07:31 UTC by patrol_
 
 ## Queue
 
@@ -8,18 +8,18 @@ _Last updated: 2026-07-19 06:32 UTC by patrol_
 |---|---|
 | Pending | 2 |
 | Active (running/reviewing) | 1 |
-| Blocked | 2 |
-| Completed/Merged (all time) | 142 |
+| Blocked | 4 |
+| Completed/Merged (all time) | 146 |
 
 ## Recent Activity (last 5)
 
 | Issue | Title | Outcome | Date |
 |---|---|---|---|
-| #115 | [milestone Milestone 4 ] Add `crates/proxy-wasm-evidence/... | merged/auto_closed_resolved | 2026-07-19 |
-| #98 | [Milestone 4] Make compile_recording_policy() accessible ... | merged/merged | 2026-07-19 |
+| #119 | [milestone Milestone 4 ] Add `crates/proxy-wasm-evidence/... | merged/merged | 2026-07-19 |
+| #118 | [milestone Milestone 2 ] Update `build_evidence()` in `cr... | merged/auto_closed_resolved | 2026-07-19 |
+| #117 | [milestone Milestone 4 ] Add `crates/proxy-wasm-evidence/... | merged/auto_closed_resolved | 2026-07-19 |
 | #57 | [milestone Milestone 2 ] Update `on_http_response_headers... | completed/maintenance_done | 2026-07-19 |
-| #108 | [milestone Milestone 4 ] Add `crates/proxy-wasm-evidence/... | merged/auto_closed_resolved | 2026-07-19 |
-| #83 | [milestone Milestone 1] Refactor signing.rs functions to ... | merged/auto_closed_resolved | 2026-07-19 |
+| #115 | [milestone Milestone 4 ] Add `crates/proxy-wasm-evidence/... | merged/auto_closed_resolved | 2026-07-19 |
 
 ## Waiting for Human
 
