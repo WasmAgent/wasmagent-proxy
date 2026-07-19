@@ -12,6 +12,16 @@ pub enum McpHeaderRisk {
     PiiLeak,
 }
 
+impl McpHeaderRisk {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::CredentialLeak => "CredentialLeak",
+            Self::HighEntropyValue => "HighEntropyValue",
+            Self::PiiLeak => "PiiLeak",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CapabilityDecision {
     pub capability: String,
@@ -52,4 +62,30 @@ pub struct AepSignature {
     pub alg: String,
     pub key_id: String,
     pub sig: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn action_evidence_serializes_mcp_header_risk_as_variant_name() {
+        let evidence = ActionEvidence {
+            action_id: "action-1".into(),
+            tool_name: "POST /mcp".into(),
+            state_changing: true,
+            precondition_digest: None,
+            result_digest: None,
+            timestamp_ms: 1_700_000_000_000,
+            parent_action_id: None,
+            causal_chain_id: None,
+            recording_mode: RecordingMode::Full,
+            capability_decision: None,
+            mcp_header_risk: Some(McpHeaderRisk::CredentialLeak),
+        };
+
+        let value = serde_json::to_value(evidence).expect("serialize ActionEvidence");
+
+        assert_eq!(value["mcp_header_risk"], "CredentialLeak");
+    }
 }
