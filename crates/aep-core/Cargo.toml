@@ -15,5 +15,12 @@ ed25519-dalek = { version = "2", features = ["rand_core"] }
 rand         = "0.8"
 uuid         = { version = "1", features = ["v4"] }
 
+[dev-dependencies]
+criterion = { workspace = true }
+
 [lib]
 doctest = false
+
+[[bench]]
+name = "latency_bench"
+harness = false
