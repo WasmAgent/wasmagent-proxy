@@ -310,4 +310,26 @@ mod tests {
         );
         assert_eq!(ev2.mcp_header_risk, Some(McpHeaderRisk::PiiLeak));
     }
+
+    #[test]
+    fn mcp_header_risk_as_str_matches_serde() {
+        for (variant, expected) in [
+            (McpHeaderRisk::CredentialLeak, "credential_leak"),
+            (McpHeaderRisk::HighEntropyValue, "high_entropy_value"),
+            (McpHeaderRisk::PiiLeak, "pii_leak"),
+        ] {
+            assert_eq!(
+                variant.as_str(),
+                expected,
+                "as_str drifted from serde serialization"
+            );
+            let serde_str = serde_json::to_string(&variant).expect("serialize");
+            // serde wraps enum in quotes; strip them for comparison.
+            let serde_trimmed = serde_str.trim_matches('"');
+            assert_eq!(
+                serde_trimmed, expected,
+                "serde rename_all = \"snake_case\" does not match as_str for {expected}"
+            );
+        }
+    }
 }

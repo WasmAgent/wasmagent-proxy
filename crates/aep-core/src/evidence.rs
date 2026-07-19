@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 /// Risk level detected in MCP-specific headers (MCP 2026-07-28+).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum McpHeaderRisk {
     /// Credential-like pattern detected (e.g. ghp_, sk-, Bearer prefix).
     CredentialLeak,
@@ -10,6 +11,18 @@ pub enum McpHeaderRisk {
     HighEntropyValue,
     /// Email-like pattern detected in MCP-Name header.
     PiiLeak,
+}
+
+impl McpHeaderRisk {
+    /// Wire-format identifier emitted as the value of the `x-aep-mcp-header-risk`
+    /// response header and serialized into AEP records via serde.
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            McpHeaderRisk::CredentialLeak => "credential_leak",
+            McpHeaderRisk::HighEntropyValue => "high_entropy_value",
+            McpHeaderRisk::PiiLeak => "pii_leak",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
