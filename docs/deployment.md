@@ -202,3 +202,98 @@ volume mount, then passed to the Wasm module through the Proxy-Wasm
 
 For Istio, mount the secret as an environment variable on the gateway proxy
 or use the WasmPlugin's `pluginConfig` to pass it directly.
+
+## Observability
+
+The Wasm module exports three Prometheus counters that track how many AEP
+evidence records have been produced per recording mode. These are emitted via
+`proxy_wasm::hostcalls::define_metric` / `increment_metric` and appear in
+Envoy's stats endpoint when the Prometheus exporter is enabled.
+
+### Counters
+
+| Envoy stat name | Prometheus label | Description |
+|---|---|---|
+| `aep.evidence.recorded_total.validation` | `mode="validation"` | Evidence records produced for read-only (validation-mode) requests |
+| `aep.evidence.recorded_total.delta` | `mode="delta"` | Evidence records produced for local-mutation (delta-mode) requests |
+| `aep.evidence.recorded_total.full` | `mode="full"` | Evidence records produced for external-mutation or network-egress (full-mode) requests |
+
+All three counters share the metric base name `aep_evidence_recorded_total` and
+are distinguished by the `mode` label after Envoy's Prometheus tag extraction.
+
+### Envoy Prometheus configuration
+
+Add the following to your Envoy bootstrap or admin configuration to expose the
+counters via `/stats/prometheus`:
+
+```yaml
+admin:
+  address:
+    socket_address:
+      address: 0.0.0.0
+      port_value: 9901
+```
+
+Then scrape Envoy's Prometheus endpoint:
+
+```yaml
+scrape_configs:
+  - job_name: 'envoy'
+    static_configs:
+      - targets: ['localhost:9901']
+    metrics_path: /stats/prometheus
+```
+
+### Sample Grafana panel
+
+The following Grafana panel JSON visualises recording-mode distribution as a
+stacked area chart over time. Import it into a new dashboard or append it to an
+existing one.
+
+```json
+{
+  "type": "timeseries",
+  "title": "AEP Evidence Recording Mode Distribution",
+  "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+  "datasource": {
+    "type": "prometheus",
+    "uid": "${datasource}"
+  },
+  "fieldConfig": {
+    "defaults": {
+      "unit": "none",
+      "custom": {
+        "drawStyle": "line",
+        "fillOpacity": 40,
+        "lineWidth": 1,
+        "pointSize": 5,
+        "showPoints": "never",
+        "stacking": { "mode": "normal", "group": "A" }
+      },
+      "color": { "mode": "palette-classic" }
+    },
+    "overrides": []
+  },
+  "options": {
+    "tooltip": { "mode": "multi", "sort": "desc" },
+    "legend": { "displayMode": "table", "placement": "bottom" }
+  },
+  "targets": [
+    {
+      "expr": "sum(rate(aep_evidence_recorded_total{mode=\"validation\"}[$__rate_interval])) by (mode)",
+      "legendFormat": "validation",
+      "refId": "A"
+    },
+    {
+      "expr": "sum(rate(aep_evidence_recorded_total{mode=\"delta\"}[$__rate_interval])) by (mode)",
+      "legendFormat": "delta",
+      "refId": "B"
+    },
+    {
+      "expr": "sum(rate(aep_evidence_recorded_total{mode=\"full\"}[$__rate_interval])) by (mode)",
+      "legendFormat": "full",
+      "refId": "C"
+    }
+  ]
+}
+```
