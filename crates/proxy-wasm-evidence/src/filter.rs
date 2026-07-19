@@ -7,6 +7,7 @@ use crate::recorder::{
 use aep_core::recording::RiskContext;
 use aep_core::RecordingMode;
 use proxy_wasm::hostcalls::{define_metric, increment_metric};
+use proxy_wasm::types::MetricType;
 
 /// Envoy stat name prefix for AEP evidence counters.
 /// Exported as `aep_evidence_recorded_total{mode="validation|delta|full"}`
