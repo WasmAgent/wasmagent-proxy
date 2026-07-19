@@ -21,6 +21,22 @@ impl McpHeaderRisk {
             Self::PiiLeak => "pii_leak",
         }
     }
+
+    /// Validates a snake_case string against the known variant names.
+    ///
+    /// Returns the matching variant, or `None` if the string is not a recognized
+    /// `McpHeaderRisk` snake_case name (e.g. typos like `"CredientialLeak"` or
+    /// bogus values like `"invalid_risk"`). Because `ActionEvidence::mcp_header_risk`
+    /// is typed as `Option<String>`, callers that recover the field from
+    /// deserialized data should run it through this validator before acting on it.
+    pub fn from_snake_case(s: &str) -> Option<McpHeaderRisk> {
+        Some(match s {
+            "credential_leak" => McpHeaderRisk::CredentialLeak,
+            "high_entropy_value" => McpHeaderRisk::HighEntropyValue,
+            "pii_leak" => McpHeaderRisk::PiiLeak,
+            _ => return None,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -133,5 +149,39 @@ mod tests {
             "high_entropy_value"
         );
         assert_eq!(McpHeaderRisk::PiiLeak.as_snake_case(), "pii_leak");
+    }
+
+    #[test]
+    fn mcp_header_risk_from_snake_case_validates_known_and_rejects_unknown() {
+        // Known snake_case names round-trip back into the typed enum.
+        for (snake, variant) in [
+            ("credential_leak", McpHeaderRisk::CredentialLeak),
+            ("high_entropy_value", McpHeaderRisk::HighEntropyValue),
+            ("pii_leak", McpHeaderRisk::PiiLeak),
+        ] {
+            assert_eq!(
+                McpHeaderRisk::from_snake_case(snake),
+                Some(variant),
+                "from_snake_case({}) should recover the variant",
+                snake
+            );
+        }
+
+        // Invalid / typo strings are rejected (None), so the String field cannot
+        // silently carry a value that is not a real McpHeaderRisk variant.
+        for invalid in [
+            "invalid_risk",
+            "CredientialLeak",
+            "credentialLeak",
+            "credential-leak",
+            "",
+        ] {
+            assert_eq!(
+                McpHeaderRisk::from_snake_case(invalid),
+                None,
+                "from_snake_case({}) should be None for a non-variant string",
+                invalid
+            );
+        }
     }
 }
