@@ -2,7 +2,11 @@ use crate::recording::RecordingMode;
 use serde::{Deserialize, Serialize};
 
 /// Risk level detected in MCP-specific headers (MCP 2026-07-28+).
+///
+/// Serialized as the snake_case variant name on the wire (e.g. `"credential_leak"`)
+/// via `#[serde(rename_all = "snake_case")]`, matching the AEP evidence JSON contract.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum McpHeaderRisk {
     /// Credential-like pattern detected (e.g. ghp_, sk-, Bearer prefix).
     CredentialLeak,
@@ -13,7 +17,11 @@ pub enum McpHeaderRisk {
 }
 
 impl McpHeaderRisk {
-    /// Returns the snake_case name of this variant for use in `ActionEvidence::mcp_header_risk`.
+    /// Returns the canonical snake_case wire name of this variant.
+    ///
+    /// This mirrors the `#[serde(rename_all = "snake_case")]` serialization, exposed
+    /// as a helper for non-serde contexts such as forming the `x-aep-mcp-header-risk`
+    /// HTTP header value.
     pub fn as_snake_case(&self) -> &'static str {
         match self {
             Self::CredentialLeak => "credential_leak",
@@ -22,13 +30,14 @@ impl McpHeaderRisk {
         }
     }
 
-    /// Validates a snake_case string against the known variant names.
+    /// Parses a snake_case wire name back into the typed [`McpHeaderRisk`] variant.
     ///
     /// Returns the matching variant, or `None` if the string is not a recognized
     /// `McpHeaderRisk` snake_case name (e.g. typos like `"CredientialLeak"` or
-    /// bogus values like `"invalid_risk"`). Because `ActionEvidence::mcp_header_risk`
-    /// is typed as `Option<String>`, callers that recover the field from
-    /// deserialized data should run it through this validator before acting on it.
+    /// bogus values like `"invalid_risk"`). Useful when consuming a raw risk
+    /// string sourced outside serde (e.g. the `x-aep-mcp-header-risk` HTTP header
+    /// or hand-rolled JSON), so an unrecognized value cannot be mistaken for a
+    /// real variant.
     pub fn from_snake_case(s: &str) -> Option<McpHeaderRisk> {
         Some(match s {
             "credential_leak" => McpHeaderRisk::CredentialLeak,
@@ -60,8 +69,9 @@ pub struct ActionEvidence {
     pub causal_chain_id: Option<String>,
     pub recording_mode: RecordingMode,
     pub capability_decision: Option<CapabilityDecision>,
-    /// Snake-case variant name of [`McpHeaderRisk`] when leakage is detected (e.g. `"credential_leak"`).
-    pub mcp_header_risk: Option<String>,
+    /// Detected MCP header leakage risk, serialized as a snake_case variant name
+    /// on the wire (e.g. `"credential_leak"`). `None` when no leakage is detected.
+    pub mcp_header_risk: Option<McpHeaderRisk>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -106,34 +116,39 @@ mod tests {
     fn mcp_header_risk_none_serializes_absent_or_null() {
         let ev = minimal_evidence();
         let json = serde_json::to_string(&ev).unwrap();
-        // When None, serde serializes Option<String> as null
+        // When None, serde serializes Option<McpHeaderRisk> as null
         assert!(json.contains("\"mcp_header_risk\":null"));
     }
 
     #[test]
     fn mcp_header_risk_some_serializes_snake_case() {
         let mut ev = minimal_evidence();
-        ev.mcp_header_risk = Some("credential_leak".to_string());
+        ev.mcp_header_risk = Some(McpHeaderRisk::CredentialLeak);
         let json = serde_json::to_string(&ev).unwrap();
+        // Typed enum serializes as the snake_case variant name via rename_all.
         assert!(json.contains("\"mcp_header_risk\":\"credential_leak\""));
     }
 
     #[test]
     fn mcp_header_risk_roundtrips_all_variants() {
-        for (name, snake) in [
-            ("CredentialLeak", "credential_leak"),
-            ("HighEntropyValue", "high_entropy_value"),
-            ("PiiLeak", "pii_leak"),
+        for (variant, snake) in [
+            (McpHeaderRisk::CredentialLeak, "credential_leak"),
+            (McpHeaderRisk::HighEntropyValue, "high_entropy_value"),
+            (McpHeaderRisk::PiiLeak, "pii_leak"),
         ] {
             let mut ev = minimal_evidence();
-            ev.mcp_header_risk = Some(snake.to_string());
+            ev.mcp_header_risk = Some(variant.clone());
             let json = serde_json::to_string(&ev).unwrap();
+            assert!(
+                json.contains(&format!("\"mcp_header_risk\":\"{snake}\"")),
+                "{:?} should serialize as \"{snake}\"",
+                variant
+            );
             let back: ActionEvidence = serde_json::from_str(&json).unwrap();
             assert_eq!(
                 back.mcp_header_risk,
-                Some(snake.to_string()),
-                "roundtrip failed for {}",
-                name
+                Some(variant),
+                "roundtrip failed for \"{snake}\""
             );
         }
     }
@@ -167,8 +182,8 @@ mod tests {
             );
         }
 
-        // Invalid / typo strings are rejected (None), so the String field cannot
-        // silently carry a value that is not a real McpHeaderRisk variant.
+        // Invalid / typo strings are rejected (None), so an unrecognized wire name
+        // cannot be mistaken for a real McpHeaderRisk variant.
         for invalid in [
             "invalid_risk",
             "CredientialLeak",
@@ -181,6 +196,25 @@ mod tests {
                 None,
                 "from_snake_case({}) should be None for a non-variant string",
                 invalid
+            );
+        }
+    }
+
+    #[test]
+    fn as_snake_case_matches_serde_wire_name() {
+        // Guards against as_snake_case() drifting from the
+        // #[serde(rename_all = "snake_case")] wire name.
+        for variant in [
+            McpHeaderRisk::CredentialLeak,
+            McpHeaderRisk::HighEntropyValue,
+            McpHeaderRisk::PiiLeak,
+        ] {
+            let serde_str = serde_json::to_string(&variant).unwrap();
+            let expected = format!("\"{}\"", variant.as_snake_case());
+            assert_eq!(
+                serde_str, expected,
+                "serde wire name drifted from as_snake_case() for {:?}",
+                variant
             );
         }
     }
