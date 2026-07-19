@@ -53,7 +53,8 @@ impl HttpContext for EvidenceFilter {
             taint_chain_length: 0,
             side_effect_class,
         };
-        let mcp_header_risk = classify_mcp_headers(self.mcp_method.as_deref(), self.mcp_name.as_deref());
+        let mcp_header_risk =
+            classify_mcp_headers(self.mcp_method.as_deref(), self.mcp_name.as_deref());
         let action_id = format!("ctx-{}", self.context_id);
         let tool_name = format!("{} {}", self.method, self.path);
         let evidence = build_evidence(action_id, tool_name, &risk_ctx, 0, None, mcp_header_risk);
