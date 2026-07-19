@@ -1,8 +1,74 @@
+use std::collections::VecDeque;
+
 use aep_core::{
     evidence::ActionEvidence,
     recording::{compile_recording_policy, RiskContext, SideEffectClass},
     McpHeaderRisk,
 };
+
+/// Bounded ring-buffer for in-flight evidence entries.
+///
+/// Holds at most `capacity` [`ActionEvidence`] records. When the buffer is full
+/// and a new entry is pushed, the oldest entry is evicted (FIFO). This avoids
+/// unbounded heap allocation in long-lived gateway instances.
+pub struct EvidenceBuffer {
+    entries: VecDeque<ActionEvidence>,
+    capacity: usize,
+}
+
+impl EvidenceBuffer {
+    /// Create a new buffer with the given maximum capacity.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `capacity` is zero.
+    pub fn new(capacity: usize) -> Self {
+        assert!(capacity > 0, "EvidenceBuffer capacity must be > 0");
+        Self {
+            entries: VecDeque::with_capacity(capacity),
+            capacity,
+        }
+    }
+
+    /// Create a new buffer with the default capacity of 1024 entries.
+    pub fn with_defaults() -> Self {
+        Self::new(1024)
+    }
+
+    /// Push an entry into the buffer. If the buffer is full, the oldest entry
+    /// is evicted and returned.
+    ///
+    /// Returns `Some(evicted)` when an entry was displaced, `None` otherwise.
+    pub fn push(&mut self, evidence: ActionEvidence) -> Option<ActionEvidence> {
+        let evicted = if self.entries.len() == self.capacity {
+            self.entries.pop_front()
+        } else {
+            None
+        };
+        self.entries.push_back(evidence);
+        evicted
+    }
+
+    /// Number of entries currently in the buffer.
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Whether the buffer is empty.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Maximum capacity of the buffer.
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
+
+    /// Drain all entries from the buffer, returning them as a `Vec`.
+    pub fn drain(&mut self) -> Vec<ActionEvidence> {
+        self.entries.drain(..).collect()
+    }
+}
 
 /// Check MCP-Method and MCP-Name header values for sensitive-data leakage patterns.
 ///
@@ -309,5 +375,91 @@ mod tests {
             Some(McpHeaderRisk::PiiLeak),
         );
         assert_eq!(ev2.mcp_header_risk, Some(McpHeaderRisk::PiiLeak));
+    }
+
+    // --- EvidenceBuffer tests ---
+
+    fn make_evidence(id: &str) -> ActionEvidence {
+        ActionEvidence {
+            action_id: id.into(),
+            tool_name: format!("tool-{}", id),
+            state_changing: false,
+            precondition_digest: None,
+            result_digest: None,
+            timestamp_ms: 1,
+            parent_action_id: None,
+            causal_chain_id: None,
+            recording_mode: RecordingMode::Validation,
+            capability_decision: None,
+            mcp_header_risk: None,
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "capacity must be > 0")]
+    fn evidence_buffer_panics_on_zero_capacity() {
+        EvidenceBuffer::new(0);
+    }
+
+    #[test]
+    fn evidence_buffer_with_defaults_has_capacity_1024() {
+        let buf = EvidenceBuffer::with_defaults();
+        assert_eq!(buf.capacity(), 1024);
+        assert!(buf.is_empty());
+        assert_eq!(buf.len(), 0);
+    }
+
+    #[test]
+    fn evidence_buffer_push_without_overflow() {
+        let mut buf = EvidenceBuffer::new(4);
+        assert!(buf.push(make_evidence("a")).is_none());
+        assert_eq!(buf.len(), 1);
+        assert!(buf.push(make_evidence("b")).is_none());
+        assert_eq!(buf.len(), 2);
+    }
+
+    #[test]
+    fn evidence_buffer_evicts_oldest_on_overflow() {
+        let mut buf = EvidenceBuffer::new(2);
+
+        assert!(buf.push(make_evidence("a")).is_none());
+        assert!(buf.push(make_evidence("b")).is_none());
+
+        // Third push evicts "a"
+        let evicted = buf.push(make_evidence("c")).unwrap();
+        assert_eq!(evicted.action_id, "a");
+        assert_eq!(buf.len(), 2);
+
+        // Fourth push evicts "b"
+        let evicted = buf.push(make_evidence("d")).unwrap();
+        assert_eq!(evicted.action_id, "b");
+        assert_eq!(buf.len(), 2);
+    }
+
+    #[test]
+    fn evidence_buffer_drain_returns_all_entries() {
+        let mut buf = EvidenceBuffer::new(4);
+        buf.push(make_evidence("a"));
+        buf.push(make_evidence("b"));
+        buf.push(make_evidence("c"));
+
+        let drained = buf.drain();
+        assert_eq!(drained.len(), 3);
+        assert_eq!(drained[0].action_id, "a");
+        assert_eq!(drained[2].action_id, "c");
+        assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn evidence_buffer_drain_after_overflow() {
+        let mut buf = EvidenceBuffer::new(2);
+        buf.push(make_evidence("a"));
+        buf.push(make_evidence("b"));
+        buf.push(make_evidence("c")); // evicts "a"
+
+        let drained = buf.drain();
+        assert_eq!(drained.len(), 2);
+        assert_eq!(drained[0].action_id, "b");
+        assert_eq!(drained[1].action_id, "c");
     }
 }
