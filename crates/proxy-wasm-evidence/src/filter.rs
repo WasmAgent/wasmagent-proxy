@@ -2,9 +2,8 @@ use proxy_wasm::traits::*;
 use proxy_wasm::types::*;
 
 use crate::config::PluginConfig;
-use crate::recorder::{
-    build_evidence, classify_mcp_headers, infer_side_effect_class_with_mcp, EvidenceBuffer,
-};
+use crate::recorder::{build_evidence, infer_side_effect_class_with_mcp, EvidenceBuffer};
+use aep_core::classify_mcp_headers;
 use aep_core::recording::RiskContext;
 use aep_core::RecordingMode;
 use proxy_wasm::hostcalls::{define_metric, increment_metric};

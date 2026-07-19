@@ -80,47 +80,6 @@ impl Default for EvidenceBuffer {
     }
 }
 
-/// Check MCP-Method and MCP-Name header values for sensitive-data leakage patterns.
-///
-/// Returns the highest-severity risk detected, or None if no risk is found.
-/// Called from the gateway filter before recording; a Some result causes the
-/// evidence record to be annotated with x-aep-mcp-header-risk.
-pub fn classify_mcp_headers(
-    mcp_method: Option<&str>,
-    mcp_name: Option<&str>,
-) -> Option<McpHeaderRisk> {
-    const CREDENTIAL_PREFIXES: &[&str] = &["ghp_", "ghb_", "sk-", "Bearer ", "token ", "api_"];
-    const MIN_HIGH_ENTROPY_LEN: usize = 32;
-
-    for val in [mcp_method, mcp_name].into_iter().flatten() {
-        // Credential prefix detection (case-insensitive)
-        let lower = val.to_lowercase();
-        for prefix in CREDENTIAL_PREFIXES {
-            if lower.starts_with(&prefix.to_lowercase() as &str) {
-                return Some(McpHeaderRisk::CredentialLeak);
-            }
-        }
-        // High-entropy detection: long alphanumeric strings
-        let alnum_run: usize = val
-            .split(|c: char| !c.is_alphanumeric())
-            .map(|s| s.len())
-            .max()
-            .unwrap_or(0);
-        if alnum_run >= MIN_HIGH_ENTROPY_LEN {
-            return Some(McpHeaderRisk::HighEntropyValue);
-        }
-    }
-
-    // PII: email pattern in MCP-Name
-    if let Some(name) = mcp_name {
-        if name.contains('@') && name.contains('.') {
-            return Some(McpHeaderRisk::PiiLeak);
-        }
-    }
-
-    None
-}
-
 /// Infer SideEffectClass from HTTP method + path heuristics, with optional
 /// MCP-Method header input (MCP 2026-07-28+ protocol).
 ///
@@ -195,6 +154,7 @@ pub fn build_evidence(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aep_core::classify_mcp_headers;
     use aep_core::recording::RecordingMode;
 
     fn risk(side_effect_class: SideEffectClass) -> RiskContext {
