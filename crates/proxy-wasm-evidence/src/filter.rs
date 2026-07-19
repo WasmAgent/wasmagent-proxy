@@ -5,6 +5,14 @@ use crate::recorder::{
     build_evidence, classify_mcp_headers, infer_side_effect_class, infer_side_effect_class_with_mcp,
 };
 use aep_core::recording::RiskContext;
+use aep_core::RecordingMode;
+use proxy_wasm::hostcalls::{define_metric, increment_metric};
+
+/// Envoy stat name prefix for AEP evidence counters.
+/// Exported as `aep_evidence_recorded_total{mode="validation|delta|full"}`
+/// when Envoy's Prometheus exporter is configured with appropriate tag
+/// extraction rules.
+const METRIC_BASE: &str = "aep.evidence.recorded_total";
 
 pub struct EvidenceFilter {
     context_id: u32,
@@ -17,6 +25,11 @@ pub struct EvidenceFilter {
     mcp_method: Option<String>,
     /// MCP-Name header value (MCP 2026-07-28+). Checked for PII/credential leakage.
     mcp_name: Option<String>,
+    /// Prometheus counter IDs for `aep_evidence_recorded_total{mode=...}`.
+    /// Defined via `proxy_wasm::hostcalls::define_metric` on construction.
+    metric_validation: u32,
+    metric_delta: u32,
+    metric_full: u32,
 }
 
 impl EvidenceFilter {
@@ -29,6 +42,15 @@ impl EvidenceFilter {
             agent_id: None,
             mcp_method: None,
             mcp_name: None,
+            metric_validation: define_metric(
+                MetricType::Counter,
+                &format!("{}.validation", METRIC_BASE),
+            )
+            .unwrap_or(0),
+            metric_delta: define_metric(MetricType::Counter, &format!("{}.delta", METRIC_BASE))
+                .unwrap_or(0),
+            metric_full: define_metric(MetricType::Counter, &format!("{}.full", METRIC_BASE))
+                .unwrap_or(0),
         }
     }
 }
@@ -61,6 +83,13 @@ impl HttpContext for EvidenceFilter {
             "x-aep-recording-mode",
             Some(evidence.recording_mode.as_str()),
         );
+        // Increment the appropriate Prometheus counter for this recording mode.
+        let metric_id = match evidence.recording_mode {
+            RecordingMode::Validation => self.metric_validation,
+            RecordingMode::Delta => self.metric_delta,
+            RecordingMode::Full => self.metric_full,
+        };
+        let _ = increment_metric(metric_id, 1);
         Action::Continue
     }
 }
