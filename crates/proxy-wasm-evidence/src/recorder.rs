@@ -44,7 +44,7 @@ impl EvidenceBuffer {
     ///
     /// Returns `Some(evicted)` when an entry was displaced, `None` otherwise.
     pub fn push(&mut self, evidence: ActionEvidence) -> Option<ActionEvidence> {
-        let evicted = if self.entries.len() == self.capacity {
+        let evicted = if self.entries.len() >= self.capacity {
             self.entries.pop_front()
         } else {
             None
@@ -71,6 +71,12 @@ impl EvidenceBuffer {
     /// Drain all entries from the buffer, returning them as a `Vec`.
     pub fn drain(&mut self) -> Vec<ActionEvidence> {
         self.entries.drain(..).collect()
+    }
+}
+
+impl Default for EvidenceBuffer {
+    fn default() -> Self {
+        Self::with_defaults()
     }
 }
 
@@ -408,9 +414,16 @@ mod tests {
     #[test]
     fn evidence_buffer_with_defaults_has_capacity_1024() {
         let buf = EvidenceBuffer::with_defaults();
-        assert_eq!(buf.capacity(), 1024);
+        assert_eq!(buf.capacity(), DEFAULT_EVIDENCE_BUFFER_CAPACITY);
         assert!(buf.is_empty());
         assert_eq!(buf.len(), 0);
+    }
+
+    #[test]
+    fn evidence_buffer_default_has_capacity_1024() {
+        let buf = EvidenceBuffer::default();
+        assert_eq!(buf.capacity(), DEFAULT_EVIDENCE_BUFFER_CAPACITY);
+        assert!(buf.is_empty());
     }
 
     #[test]
