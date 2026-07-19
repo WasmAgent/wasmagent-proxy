@@ -1,0 +1,15 @@
+[package]
+name        = "wasmagent-proxy-benchmarks"
+description = "Workspace-level criterion benchmarks for wasmagent-proxy"
+version.workspace     = true
+edition.workspace     = true
+publish      = false
+
+[dependencies]
+aep-core  = { path = "../crates/aep-core" }
+criterion = { workspace = true }
+
+[[bench]]
+name = "latency_bench"
+path = "latency_bench.rs"
+harness = false

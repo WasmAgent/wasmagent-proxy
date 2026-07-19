@@ -2,6 +2,7 @@
 members = [
     "crates/proxy-wasm-evidence",
     "crates/aep-core",
+    "benchmarks",
 ]
 resolver = "2"
 
