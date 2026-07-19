@@ -15,6 +15,8 @@ pub struct PluginConfig {
     pub trace_id_header: String,
     /// Agent identity header (e.g. x-agent-id).
     pub agent_id_header: String,
+    /// Maximum number of evidence records to buffer before flushing.
+    pub max_evidence_buffer: usize,
 }
 
 impl Default for PluginConfig {
@@ -25,6 +27,7 @@ impl Default for PluginConfig {
             signing_key_hex: None,
             trace_id_header: "x-b3-traceid".into(),
             agent_id_header: "x-agent-id".into(),
+            max_evidence_buffer: 1024,
         }
     }
 }
