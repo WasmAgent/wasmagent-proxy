@@ -6,6 +6,10 @@ use aep_core::{
     McpHeaderRisk,
 };
 
+/// Default maximum number of in-flight evidence entries retained by
+/// [`EvidenceBuffer`].
+pub const DEFAULT_EVIDENCE_BUFFER_CAPACITY: usize = 1024;
+
 /// Bounded ring-buffer for in-flight evidence entries.
 ///
 /// Holds at most `capacity` [`ActionEvidence`] records. When the buffer is full
@@ -32,7 +36,7 @@ impl EvidenceBuffer {
 
     /// Create a new buffer with the default capacity of 1024 entries.
     pub fn with_defaults() -> Self {
-        Self::new(1024)
+        Self::new(DEFAULT_EVIDENCE_BUFFER_CAPACITY)
     }
 
     /// Push an entry into the buffer. If the buffer is full, the oldest entry
