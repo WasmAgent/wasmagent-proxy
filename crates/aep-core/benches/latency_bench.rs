@@ -85,25 +85,36 @@ fn bench_compile_recording_policy(c: &mut Criterion) {
 criterion_group!(benches, bench_compile_recording_policy);
 
 fn main() {
-    // Sub-microsecond median latency assertion — fails fast in CI if regression.
+    // Sub-microsecond median latency assertion — fails fast in CI on regression.
+    // Each per-op sample amortizes `Instant` overhead across many iterations
+    // (per-call timing would be swamped by the timer for a sub-μs function); the
+    // median across trials is robust to scheduler outliers and matches the
+    // milestone's "median latency under 1 microsecond" wording.
+    const TRIALS: usize = 11;
     const ITERATIONS: u64 = 100_000;
     const THRESHOLD_NS: f64 = 1_000.0; // 1 μs
     for ctx in all_contexts() {
-        let start = Instant::now();
-        for _ in 0..ITERATIONS {
-            black_box(compile_recording_policy(black_box(&ctx)));
-        }
-        let avg_ns = start.elapsed().as_nanos() as f64 / ITERATIONS as f64;
+        let mut samples: Vec<f64> = (0..TRIALS)
+            .map(|_| {
+                let start = Instant::now();
+                for _ in 0..ITERATIONS {
+                    black_box(compile_recording_policy(black_box(&ctx)));
+                }
+                start.elapsed().as_nanos() as f64 / ITERATIONS as f64
+            })
+            .collect();
+        samples.sort_by(|a, b| a.partial_cmp(b).expect("finite latencies"));
+        let median_ns = samples[samples.len() / 2];
         assert!(
-            avg_ns < THRESHOLD_NS,
-            "compile_recording_policy avg {:.0} ns exceeds 1 μs threshold for context {:?}",
-            avg_ns,
+            median_ns < THRESHOLD_NS,
+            "compile_recording_policy median {:.0} ns exceeds 1 μs threshold for context {:?}",
+            median_ns,
             ctx.side_effect_class,
         );
     }
     println!(
-        "✓ all paths under {:.0} ns/op ({} iterations each)",
-        THRESHOLD_NS, ITERATIONS
+        "✓ all paths median under {:.0} ns/op ({} trials × {} iterations each)",
+        THRESHOLD_NS, TRIALS, ITERATIONS
     );
 
     // Run criterion benchmarks.
