@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 /// Configuration loaded from the Wasm plugin's root context (e.g. Istio WasmPlugin spec).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct PluginConfig {
     /// Default recording mode when no risk signals are present.
     pub default_mode: RecordingMode,
@@ -19,6 +20,8 @@ pub struct PluginConfig {
     pub max_evidence_buffer: usize,
 }
 
+pub type Config = PluginConfig;
+
 impl Default for PluginConfig {
     fn default() -> Self {
         Self {
@@ -29,5 +32,48 @@ impl Default for PluginConfig {
             agent_id_header: "x-agent-id".into(),
             max_evidence_buffer: 1024,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn defaults_max_evidence_buffer_to_1024() {
+        let config = Config::default();
+
+        assert_eq!(config.max_evidence_buffer, 1024);
+    }
+
+    #[test]
+    fn reads_max_evidence_buffer_from_json() {
+        let config: Config = serde_json::from_str(
+            r#"{
+                "default_mode": "delta",
+                "key_id": "gateway-key",
+                "trace_id_header": "x-trace-id",
+                "agent_id_header": "x-agent",
+                "max_evidence_buffer": 64
+            }"#,
+        )
+        .expect("deserialize plugin config");
+
+        assert_eq!(config.max_evidence_buffer, 64);
+    }
+
+    #[test]
+    fn defaults_max_evidence_buffer_when_json_omits_it() {
+        let config: Config = serde_json::from_str(
+            r#"{
+                "default_mode": "full",
+                "key_id": "gateway-key",
+                "trace_id_header": "x-trace-id",
+                "agent_id_header": "x-agent"
+            }"#,
+        )
+        .expect("deserialize plugin config");
+
+        assert_eq!(config.max_evidence_buffer, 1024);
     }
 }
