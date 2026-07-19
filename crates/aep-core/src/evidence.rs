@@ -69,9 +69,9 @@ pub struct ActionEvidence {
     pub causal_chain_id: Option<String>,
     pub recording_mode: RecordingMode,
     pub capability_decision: Option<CapabilityDecision>,
-    /// Detected MCP header leakage risk as the snake_case `McpHeaderRisk` variant
+    /// Detected MCP header leakage risk. Serialized as the snake_case variant
     /// name (e.g. `"credential_leak"`). `None` when no leakage is detected.
-    pub mcp_header_risk: Option<String>,
+    pub mcp_header_risk: Option<McpHeaderRisk>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,14 +116,14 @@ mod tests {
     fn mcp_header_risk_none_serializes_absent_or_null() {
         let ev = minimal_evidence();
         let json = serde_json::to_string(&ev).unwrap();
-        // When None, serde serializes Option<String> as null
+        // When None, serde serializes Option<McpHeaderRisk> as null
         assert!(json.contains("\"mcp_header_risk\":null"));
     }
 
     #[test]
     fn mcp_header_risk_some_serializes_snake_case() {
         let mut ev = minimal_evidence();
-        ev.mcp_header_risk = Some(McpHeaderRisk::CredentialLeak.as_snake_case().into());
+        ev.mcp_header_risk = Some(McpHeaderRisk::CredentialLeak);
         let json = serde_json::to_string(&ev).unwrap();
         assert!(json.contains("\"mcp_header_risk\":\"credential_leak\""));
     }
@@ -136,7 +136,7 @@ mod tests {
             (McpHeaderRisk::PiiLeak, "pii_leak"),
         ] {
             let mut ev = minimal_evidence();
-            ev.mcp_header_risk = Some(variant.as_snake_case().into());
+            ev.mcp_header_risk = Some(variant.clone());
             let json = serde_json::to_string(&ev).unwrap();
             assert!(
                 json.contains(&format!("\"mcp_header_risk\":\"{snake}\"")),
@@ -144,11 +144,7 @@ mod tests {
                 variant
             );
             let back: ActionEvidence = serde_json::from_str(&json).unwrap();
-            assert_eq!(
-                back.mcp_header_risk.as_deref(),
-                Some(snake),
-                "roundtrip failed for \"{snake}\""
-            );
+            assert_eq!(back.mcp_header_risk, Some(variant));
         }
     }
 

@@ -65,7 +65,7 @@ impl HttpContext for EvidenceFilter {
             Some(evidence.recording_mode.as_str()),
         );
         if let Some(ref risk) = evidence.mcp_header_risk {
-            self.set_http_response_header("x-aep-mcp-header-risk", Some(risk));
+            self.set_http_response_header("x-aep-mcp-header-risk", Some(risk.as_snake_case()));
         }
         Action::Continue
     }
