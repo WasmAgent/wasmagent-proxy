@@ -1,8 +1,9 @@
 use proxy_wasm::traits::*;
 use proxy_wasm::types::*;
 
+use crate::config::PluginConfig;
 use crate::recorder::{
-    build_evidence, classify_mcp_headers, infer_side_effect_class, infer_side_effect_class_with_mcp,
+    build_evidence, classify_mcp_headers, infer_side_effect_class_with_mcp, EvidenceBuffer,
 };
 use aep_core::recording::RiskContext;
 use aep_core::RecordingMode;
@@ -15,8 +16,65 @@ use proxy_wasm::types::MetricType;
 /// extraction rules.
 const METRIC_BASE: &str = "aep.evidence.recorded_total";
 
+pub struct EvidenceRoot {
+    config: PluginConfig,
+}
+
+impl EvidenceRoot {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl Default for EvidenceRoot {
+    fn default() -> Self {
+        Self {
+            config: PluginConfig::default(),
+        }
+    }
+}
+
+impl Context for EvidenceRoot {}
+
+impl RootContext for EvidenceRoot {
+    fn on_configure(&mut self, plugin_configuration_size: usize) -> bool {
+        if plugin_configuration_size == 0 {
+            self.config = PluginConfig::default();
+            return true;
+        }
+
+        let Some(config_bytes) = self.get_plugin_configuration() else {
+            return false;
+        };
+
+        match serde_json::from_slice::<PluginConfig>(&config_bytes) {
+            Ok(config) => {
+                if config.max_evidence_buffer == 0 {
+                    log::error!("proxy-wasm evidence max_evidence_buffer must be greater than 0");
+                    return false;
+                }
+                self.config = config;
+                true
+            }
+            Err(err) => {
+                log::error!("failed to parse proxy-wasm evidence config JSON: {err}");
+                false
+            }
+        }
+    }
+
+    fn create_http_context(&self, context_id: u32) -> Option<Box<dyn HttpContext>> {
+        Some(Box::new(EvidenceFilter::new(
+            context_id,
+            self.config.clone(),
+        )))
+    }
+}
+
 pub struct EvidenceFilter {
     context_id: u32,
+    config: PluginConfig,
+    evidence_buffer: EvidenceBuffer,
     method: String,
     path: String,
     trace_id: Option<String>,
@@ -34,9 +92,12 @@ pub struct EvidenceFilter {
 }
 
 impl EvidenceFilter {
-    pub fn new(context_id: u32) -> Self {
+    pub fn new(context_id: u32, config: PluginConfig) -> Self {
+        let evidence_buffer = EvidenceBuffer::new(config.max_evidence_buffer);
         Self {
             context_id,
+            config,
+            evidence_buffer,
             method: String::new(),
             path: String::new(),
             trace_id: None,
@@ -62,13 +123,16 @@ impl HttpContext for EvidenceFilter {
     fn on_http_request_headers(&mut self, _num_headers: usize, _end_of_stream: bool) -> Action {
         self.method = self.get_http_request_header(":method").unwrap_or_default();
         self.path = self.get_http_request_header(":path").unwrap_or_default();
-        self.trace_id = self.get_http_request_header("x-b3-traceid");
-        self.agent_id = self.get_http_request_header("x-agent-id");
+        self.trace_id = self.get_http_request_header(&self.config.trace_id_header);
+        self.agent_id = self.get_http_request_header(&self.config.agent_id_header);
+        self.mcp_method = self.get_http_request_header("mcp-method");
+        self.mcp_name = self.get_http_request_header("mcp-name");
         Action::Continue
     }
 
     fn on_http_response_headers(&mut self, _num_headers: usize, _end_of_stream: bool) -> Action {
-        let side_effect_class = infer_side_effect_class(&self.method, &self.path);
+        let side_effect_class =
+            infer_side_effect_class_with_mcp(&self.method, &self.path, self.mcp_method.as_deref());
         let risk_ctx = RiskContext {
             was_vetted: false,
             has_consent_anomaly: false,
@@ -77,7 +141,9 @@ impl HttpContext for EvidenceFilter {
         };
         let action_id = format!("ctx-{}", self.context_id);
         let tool_name = format!("{} {}", self.method, self.path);
-        let evidence = build_evidence(action_id, tool_name, &risk_ctx, 0, None, None);
+        let mcp_header_risk =
+            classify_mcp_headers(self.mcp_method.as_deref(), self.mcp_name.as_deref());
+        let evidence = build_evidence(action_id, tool_name, &risk_ctx, 0, None, mcp_header_risk);
         // Emit the canonical snake_case form (matching the `recording_mode` field
         // serialized into AEP records) rather than the Debug-format PascalCase.
         self.set_http_response_header(
@@ -91,6 +157,7 @@ impl HttpContext for EvidenceFilter {
             RecordingMode::Full => self.metric_full,
         };
         let _ = increment_metric(metric_id, 1);
+        let _ = self.evidence_buffer.push(evidence);
         Action::Continue
     }
 }

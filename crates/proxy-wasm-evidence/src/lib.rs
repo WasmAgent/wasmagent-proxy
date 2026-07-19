@@ -21,23 +21,18 @@ pub mod recorder;
 #[cfg(target_arch = "wasm32")]
 mod filter;
 
-pub use config::PluginConfig;
+pub use config::{Config, PluginConfig};
 pub use recorder::{build_evidence, infer_side_effect_class};
 
 #[cfg(target_arch = "wasm32")]
-use proxy_wasm::traits::HttpContext;
-#[cfg(target_arch = "wasm32")]
 use proxy_wasm::types::LogLevel;
 
-/// Proxy-Wasm module entry point — registers the HTTP context factory.
-///
-/// Compiled only for `wasm32*`; the SDK imports host functions that exist solely
-/// inside a Proxy-Wasm host (see the crate docs for why native compilation is
-/// gated off).
+// Proxy-Wasm module entry point. Compiled only for `wasm32*`; the SDK imports
+// host functions that exist solely inside a Proxy-Wasm host.
 #[cfg(target_arch = "wasm32")]
 proxy_wasm::main! {{
     proxy_wasm::set_log_level(LogLevel::Info);
-    proxy_wasm::set_http_context(|context_id, _| -> Box<dyn HttpContext> {
-        Box::new(filter::EvidenceFilter::new(context_id))
+    proxy_wasm::set_root_context(|_| -> Box<dyn proxy_wasm::traits::RootContext> {
+        Box::new(filter::EvidenceRoot::new())
     });
 }}
