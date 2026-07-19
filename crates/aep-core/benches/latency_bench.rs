@@ -10,7 +10,7 @@
 //! 7. mutate_local        – MutateLocal               → Delta
 //! 8. read_default        – Read, no anomalies        → Validation
 
-use aep_core::recording::{SideEffectClass, RiskContext, compile_recording_policy};
+use aep_core::recording::{compile_recording_policy, RiskContext, SideEffectClass};
 use criterion::{black_box, criterion_group, Criterion};
 use std::time::Instant;
 
