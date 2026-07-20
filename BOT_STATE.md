@@ -1,6 +1,6 @@
 # Bot State
 
-_Last updated: 2026-07-20 17:05 UTC by patrol_
+_Last updated: 2026-07-20 17:55 UTC by patrol_
 
 ## Queue
 
@@ -8,18 +8,18 @@ _Last updated: 2026-07-20 17:05 UTC by patrol_
 |---|---|
 | Pending | 0 |
 | Active (running/reviewing) | 0 |
-| Blocked | 1 |
-| Completed/Merged (all time) | 208 |
+| Blocked | 2 |
+| Completed/Merged (all time) | 211 |
 
 ## Recent Activity (last 5)
 
 | Issue | Title | Outcome | Date |
 |---|---|---|---|
+| #193 | [milestone Milestone 1 ] Fix `crates/proxy-wasm-evidence/... | merged/auto_closed_resolved | 2026-07-20 |
+| #195 | [milestone Milestone 2 ] Extend `ActionEvidence` in `crat... | merged/auto_closed_resolved | 2026-07-20 |
+| #196 | [milestone Milestone 2 ] Update `build_evidence()` in `cr... | merged/auto_closed_resolved | 2026-07-20 |
 | #187 | [milestone Milestone 2] Implement classify_mcp_headers() ... | merged/merged | 2026-07-20 |
 | #189 | chore: increase cargo-test timeout based on observed p99 ... | merged/merged | 2026-07-20 |
-| #185 | [milestone Milestone 2 ] Update `build_evidence()` in `cr... | merged/auto_closed_resolved | 2026-07-20 |
-| #182 | [milestone Milestone 1 ] Fix `crates/proxy-wasm-evidence/... | merged/auto_closed_resolved | 2026-07-20 |
-| #183 | [milestone Milestone 2 ] Promote `classify_mcp_headers()`... | merged/auto_closed_resolved | 2026-07-20 |
 
 ## Waiting for Human
 
