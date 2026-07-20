@@ -4,15 +4,19 @@
 # real compile target for the proxy-wasm-evidence filter and exercises code
 # paths that a native `cargo test` does not.
 commands:
+  - name: cargo-check
+    cmd: "PATH=/root/.cargo/bin:$PATH cargo check --workspace"
+    timeout: 2m
+    level: 1
   - name: cargo-test
     cmd: "PATH=/root/.cargo/bin:$PATH cargo test --workspace --lib"
-    timeout: 5m
+    timeout: 12m
+    level: 3
+  - name: wasm-build
+    cmd: "PATH=/root/.cargo/bin:$PATH cargo build -p proxy-wasm-evidence --target wasm32-wasip1 --release"
+    timeout: 12m
     level: 3
   - name: cargo-clippy
     cmd: "PATH=/root/.cargo/bin:$PATH cargo clippy --workspace -- -D warnings"
     timeout: 3m
-    level: 2
-  - name: wasm-build
-    cmd: "PATH=/root/.cargo/bin:$PATH cargo build -p proxy-wasm-evidence --target wasm32-wasip1 --release"
-    timeout: 5m
-    level: 3
+    level: 4
