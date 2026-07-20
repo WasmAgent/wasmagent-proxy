@@ -1,8 +1,24 @@
 pub use crate::evidence::McpHeaderRisk;
 
-/// Check MCP-Method and MCP-Name header values for sensitive-data leakage patterns.
+/// Check MCP-Method and MCP-Name header values for sensitive-data leakage patterns
+/// as defined by the MCP 2026-07-28 specification.
 ///
-/// Returns the highest-severity risk detected, or None if no risk is found.
+/// Three detection layers are applied in priority order (first match wins):
+///
+/// 1. **Credential prefix detection** — both `mcp_method` and `mcp_name` are
+///    checked (case-insensitive) against known credential prefixes
+///    (`ghp_`, `ghb_`, `sk-`, `Bearer `, `token `, `api_`). A match yields
+///    [`McpHeaderRisk::CredentialLeak`].
+///
+/// 2. **High-entropy value detection** — a contiguous alphanumeric run of
+///    ≥ 32 characters in either header value suggests a leaked API key or
+///    opaque token, yielding [`McpHeaderRisk::HighEntropyValue`].
+///
+/// 3. **PII detection** — the `mcp_name` value is checked for an email-like
+///    pattern (contains both `@` and `.`), yielding [`McpHeaderRisk::PiiLeak`].
+///
+/// Returns the highest-severity [`McpHeaderRisk`] detected, or `None` if no
+/// leakage pattern is found and both headers are absent or benign.
 pub fn classify_mcp_headers(
     mcp_method: Option<&str>,
     mcp_name: Option<&str>,
@@ -73,6 +89,18 @@ mod tests {
         assert_eq!(
             classify_mcp_headers(None, Some("user@example.com")),
             Some(McpHeaderRisk::PiiLeak)
+        );
+    }
+
+    #[test]
+    fn classify_mcp_headers_credential_prefix_case_insensitive() {
+        assert_eq!(
+            classify_mcp_headers(Some("GHP_ABC123"), None),
+            Some(McpHeaderRisk::CredentialLeak)
+        );
+        assert_eq!(
+            classify_mcp_headers(Some("SK-abcdefghij"), None),
+            Some(McpHeaderRisk::CredentialLeak)
         );
     }
 
