@@ -19,6 +19,22 @@ pub use crate::evidence::McpHeaderRisk;
 ///
 /// Returns the highest-severity [`McpHeaderRisk`] detected, or `None` if no
 /// leakage pattern is found and both headers are absent or benign.
+///
+/// # Integration with `build_evidence`
+///
+/// The returned `Option<McpHeaderRisk>` is designed to pass directly as the
+/// `mcp_header_risk` parameter of
+/// [`proxy_wasm_evidence::recorder::build_evidence`], which converts the enum
+/// to a `snake_case` string via [`McpHeaderRisk::as_str`] and stores it on
+/// [`ActionEvidence::mcp_header_risk`]. This is the wiring used by
+/// `EvidenceFilter::on_http_response_headers` in the Proxy-Wasm HTTP filter:
+///
+/// ```text
+/// let risk = classify_mcp_headers(mcp_method, mcp_name);
+/// let evidence = build_evidence(id, tool, &risk_ctx, ts, None, risk);
+/// //                                                      ^^^
+/// //                                         Option<McpHeaderRisk> flows through
+/// ```
 pub fn classify_mcp_headers(
     mcp_method: Option<&str>,
     mcp_name: Option<&str>,
@@ -112,5 +128,68 @@ mod tests {
         );
         assert_eq!(classify_mcp_headers(None, None), None);
         assert_eq!(classify_mcp_headers(Some("tools/list"), None), None);
+    }
+
+    #[test]
+    fn classify_mcp_headers_no_mcp_headers_returns_none() {
+        // Neither MCP-Method nor MCP-Name present — common for non-MCP traffic.
+        assert_eq!(classify_mcp_headers(None, None), None);
+    }
+
+    #[test]
+    fn classify_mcp_headers_partial_mcp_headers_benign_returns_none() {
+        // Only MCP-Method present, MCP-Name absent — partial MCP headers, clean values.
+        assert_eq!(classify_mcp_headers(Some("tools/call"), None), None);
+        assert_eq!(classify_mcp_headers(Some("resources/read"), None), None);
+
+        // Only MCP-Name present, MCP-Method absent — partial MCP headers, clean value.
+        assert_eq!(classify_mcp_headers(None, Some("my_tool")), None);
+        assert_eq!(classify_mcp_headers(None, Some("read_config")), None);
+    }
+
+    #[test]
+    fn classify_mcp_headers_partial_mcp_headers_leakage_detected() {
+        // Only MCP-Method present with credential prefix — leakage still detected.
+        assert_eq!(
+            classify_mcp_headers(Some("ghp_abc123"), None),
+            Some(McpHeaderRisk::CredentialLeak)
+        );
+
+        // Only MCP-Name present with PII — leakage still detected.
+        assert_eq!(
+            classify_mcp_headers(None, Some("user@example.com")),
+            Some(McpHeaderRisk::PiiLeak)
+        );
+    }
+
+    #[test]
+    fn classify_mcp_headers_complete_mcp_headers_benign_returns_none() {
+        // Both MCP-Method and MCP-Name present with clean values — no leakage.
+        assert_eq!(
+            classify_mcp_headers(Some("tools/call"), Some("read_file")),
+            None
+        );
+        assert_eq!(
+            classify_mcp_headers(Some("resources/read"), Some("my_resource")),
+            None
+        );
+    }
+
+    #[test]
+    fn classify_mcp_headers_complete_mcp_headers_leakage_in_method_detected() {
+        // Both headers present; MCP-Method carries a credential — credential wins.
+        assert_eq!(
+            classify_mcp_headers(Some("sk-secretkey"), Some("read_file")),
+            Some(McpHeaderRisk::CredentialLeak)
+        );
+    }
+
+    #[test]
+    fn classify_mcp_headers_complete_mcp_headers_leakage_in_name_detected() {
+        // Both headers present; MCP-Name carries PII — PII detected.
+        assert_eq!(
+            classify_mcp_headers(Some("tools/call"), Some("admin@corp.io")),
+            Some(McpHeaderRisk::PiiLeak)
+        );
     }
 }
