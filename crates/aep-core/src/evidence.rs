@@ -13,11 +13,17 @@ pub enum McpHeaderRisk {
 }
 
 impl McpHeaderRisk {
+    /// Return the variant name in `snake_case` form.
+    ///
+    /// This is the canonical string carried by
+    /// [`ActionEvidence::mcp_header_risk`] when leakage is detected, so that
+    /// the serialized AEP record uses stable lowercase identifiers (e.g.
+    /// `credential_leak`) rather than the Rust PascalCase variant names.
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::CredentialLeak => "CredentialLeak",
-            Self::HighEntropyValue => "HighEntropyValue",
-            Self::PiiLeak => "PiiLeak",
+            Self::CredentialLeak => "credential_leak",
+            Self::HighEntropyValue => "high_entropy_value",
+            Self::PiiLeak => "pii_leak",
         }
     }
 }
@@ -43,7 +49,10 @@ pub struct ActionEvidence {
     pub causal_chain_id: Option<String>,
     pub recording_mode: RecordingMode,
     pub capability_decision: Option<CapabilityDecision>,
-    pub mcp_header_risk: Option<McpHeaderRisk>,
+    /// `McpHeaderRisk` variant name in `snake_case` when MCP header leakage is
+    /// detected, else `None`. Stored as a plain string so downstream consumers
+    /// (and the FAEP schema) need no Rust enum definition to read the value.
+    pub mcp_header_risk: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,7 +78,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn action_evidence_serializes_mcp_header_risk_as_variant_name() {
+    fn mcp_header_risk_as_str_returns_snake_case_variant_name() {
+        assert_eq!(McpHeaderRisk::CredentialLeak.as_str(), "credential_leak");
+        assert_eq!(
+            McpHeaderRisk::HighEntropyValue.as_str(),
+            "high_entropy_value"
+        );
+        assert_eq!(McpHeaderRisk::PiiLeak.as_str(), "pii_leak");
+    }
+
+    #[test]
+    fn action_evidence_serializes_mcp_header_risk_as_snake_case_string() {
         let evidence = ActionEvidence {
             action_id: "action-1".into(),
             tool_name: "POST /mcp".into(),
@@ -81,11 +100,11 @@ mod tests {
             causal_chain_id: None,
             recording_mode: RecordingMode::Full,
             capability_decision: None,
-            mcp_header_risk: Some(McpHeaderRisk::CredentialLeak),
+            mcp_header_risk: Some(McpHeaderRisk::CredentialLeak.as_str().to_owned()),
         };
 
         let value = serde_json::to_value(evidence).expect("serialize ActionEvidence");
 
-        assert_eq!(value["mcp_header_risk"], "CredentialLeak");
+        assert_eq!(value["mcp_header_risk"], "credential_leak");
     }
 }
