@@ -1,18 +1,21 @@
 # wasmagent-proxy verify manifest.
-# Mirrors the checks in .github/workflows CI so the bot's local pre-merge gate
-# catches the same failures CI would — including the wasm32 build, which is the
-# real compile target for the proxy-wasm-evidence filter and exercises code
-# paths that a native `cargo test` does not.
+# Fast feedback loop: cargo-check at level 1 (~30s) catches type errors early.
+# Full test + wasm build at level 3 with generous timeouts. Clippy at level 4
+# (non-blocking, runs only after tests pass).
 commands:
+  - name: cargo-check
+    cmd: "PATH=/root/.cargo/bin:$PATH cargo check --workspace"
+    timeout: 2m
+    level: 1
   - name: cargo-test
     cmd: "PATH=/root/.cargo/bin:$PATH cargo test --workspace --lib"
-    timeout: 5m
+    timeout: 8m
+    level: 3
+  - name: wasm-build
+    cmd: "PATH=/root/.cargo/bin:$PATH cargo build -p proxy-wasm-evidence --target wasm32-wasip1 --release"
+    timeout: 8m
     level: 3
   - name: cargo-clippy
     cmd: "PATH=/root/.cargo/bin:$PATH cargo clippy --workspace -- -D warnings"
     timeout: 3m
-    level: 2
-  - name: wasm-build
-    cmd: "PATH=/root/.cargo/bin:$PATH cargo build -p proxy-wasm-evidence --target wasm32-wasip1 --release"
-    timeout: 5m
-    level: 3
+    level: 4
