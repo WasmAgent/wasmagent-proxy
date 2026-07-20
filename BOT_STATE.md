@@ -1,28 +1,29 @@
 # Bot State
 
-_Last updated: 2026-07-20 09:04 UTC by patrol_
+_Last updated: 2026-07-20 09:34 UTC by patrol_
 
 ## Queue
 
 | State | Count |
 |---|---|
-| Pending | 10 |
+| Pending | 0 |
 | Active (running/reviewing) | 0 |
-| Blocked | 0 |
-| Completed/Merged (all time) | 180 |
+| Blocked | 2 |
+| Completed/Merged (all time) | 189 |
 
 ## Recent Activity (last 5)
 
 | Issue | Title | Outcome | Date |
 |---|---|---|---|
-| #164 | [milestone Milestone 4 ] Add `benchmarks/latency_bench.rs... | merged/auto_closed_resolved | 2026-07-20 |
-| #161 | [milestone Milestone 4 ] Add `benchmarks/latency_bench.rs... | merged/auto_closed_resolved | 2026-07-19 |
-| #156 | [milestone Milestone 4 ] Add `benchmarks/latency_bench.rs... | merged/merged | 2026-07-19 |
-| #157 | [milestone Milestone 4 ] Add `crates/proxy-wasm-evidence/... | merged/auto_closed_resolved | 2026-07-19 |
-| #155 | [milestone Milestone 4 ] Add `crates/proxy-wasm-evidence/... | merged/auto_closed_resolved | 2026-07-19 |
+| #162 | [milestone Milestone 4 ] Add `benchmarks/latency_bench.rs... | completed/issue_closed_upstream | 2026-07-20 |
+| #142 | [milestone Milestone 1 ] Fix `crates/proxy-wasm-evidence/... | merged/auto_closed_resolved | 2026-07-20 |
+| #160 | [milestone Milestone 4 ] Add `benchmarks/latency_bench.rs... | completed/issue_closed_upstream | 2026-07-20 |
+| #147 | [milestone Milestone 4 ] Add `benchmarks/latency_bench.rs... | completed/issue_closed_upstream | 2026-07-20 |
+| #153 | [milestone Milestone 4 ] Add `benchmarks/latency_bench.rs... | completed/issue_closed_upstream | 2026-07-20 |
 
 ## Waiting for Human
 
+- #166: [milestone Milestone 1 ] Fix `crates/proxy-wasm-evidence/src/filter.rs` `on_http_response_headers()`: rea...
 - #86: [milestone Milestone 1] Add mcp_method and mcp_name fields to evidence struct in crates/proxy-wasm-evidence/src/filter.rs
 - #85: [milestone Milestone 4] Extract and export compile_recording_policy() for external testing
 - #80: [milestone Milestone 4 ] Add `benchmarks/latency_bench.rs` criterion benchmark for `compile_recording_pol...
