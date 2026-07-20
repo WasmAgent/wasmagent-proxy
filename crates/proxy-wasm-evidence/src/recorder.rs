@@ -147,7 +147,7 @@ pub fn build_evidence(
         causal_chain_id: None,
         recording_mode: policy.mode,
         capability_decision: None,
-        mcp_header_risk: mcp_header_risk.map(|r| r.as_str().to_owned()),
+        mcp_header_risk,
     }
 }
 
@@ -334,7 +334,7 @@ mod tests {
             None,
             Some(McpHeaderRisk::CredentialLeak),
         );
-        assert_eq!(ev.mcp_header_risk.as_deref(), Some("credential_leak"));
+        assert_eq!(ev.mcp_header_risk, Some(McpHeaderRisk::CredentialLeak));
 
         let ev2 = build_evidence(
             "ctx-4".into(),
@@ -344,7 +344,7 @@ mod tests {
             None,
             Some(McpHeaderRisk::PiiLeak),
         );
-        assert_eq!(ev2.mcp_header_risk.as_deref(), Some("pii_leak"));
+        assert_eq!(ev2.mcp_header_risk, Some(McpHeaderRisk::PiiLeak));
     }
 
     // --- EvidenceBuffer tests ---

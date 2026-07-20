@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 /// Risk level detected in MCP-specific headers (MCP 2026-07-28+).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum McpHeaderRisk {
     /// Credential-like pattern detected (e.g. ghp_, sk-, Bearer prefix).
     CredentialLeak,
@@ -50,9 +51,10 @@ pub struct ActionEvidence {
     pub recording_mode: RecordingMode,
     pub capability_decision: Option<CapabilityDecision>,
     /// `McpHeaderRisk` variant name in `snake_case` when MCP header leakage is
-    /// detected, else `None`. Stored as a plain string so downstream consumers
-    /// (and the FAEP schema) need no Rust enum definition to read the value.
-    pub mcp_header_risk: Option<String>,
+    /// detected, else `None`. Serializes as a lowercase string (e.g.
+    /// `"credential_leak"`) via `#[serde(rename_all = "snake_case")]` on the
+    /// enum, so downstream consumers need no Rust enum definition to read it.
+    pub mcp_header_risk: Option<McpHeaderRisk>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,7 +102,7 @@ mod tests {
             causal_chain_id: None,
             recording_mode: RecordingMode::Full,
             capability_decision: None,
-            mcp_header_risk: Some(McpHeaderRisk::CredentialLeak.as_str().to_owned()),
+            mcp_header_risk: Some(McpHeaderRisk::CredentialLeak),
         };
 
         let value = serde_json::to_value(evidence).expect("serialize ActionEvidence");
