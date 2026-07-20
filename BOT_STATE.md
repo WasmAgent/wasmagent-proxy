@@ -1,25 +1,25 @@
 # Bot State
 
-_Last updated: 2026-07-20 10:21 UTC by patrol_
+_Last updated: 2026-07-20 10:37 UTC by patrol_
 
 ## Queue
 
 | State | Count |
 |---|---|
-| Pending | 2 |
+| Pending | 1 |
 | Active (running/reviewing) | 1 |
 | Blocked | 1 |
-| Completed/Merged (all time) | 190 |
+| Completed/Merged (all time) | 191 |
 
 ## Recent Activity (last 5)
 
 | Issue | Title | Outcome | Date |
 |---|---|---|---|
+| #168 | [milestone Milestone 2 ] Promote `classify_mcp_headers()`... | merged/auto_closed_resolved | 2026-07-20 |
 | #166 | [milestone Milestone 1 ] Fix `crates/proxy-wasm-evidence/... | merged/auto_closed_resolved | 2026-07-20 |
 | #162 | [milestone Milestone 4 ] Add `benchmarks/latency_bench.rs... | completed/issue_closed_upstream | 2026-07-20 |
 | #142 | [milestone Milestone 1 ] Fix `crates/proxy-wasm-evidence/... | merged/auto_closed_resolved | 2026-07-20 |
 | #160 | [milestone Milestone 4 ] Add `benchmarks/latency_bench.rs... | completed/issue_closed_upstream | 2026-07-20 |
-| #147 | [milestone Milestone 4 ] Add `benchmarks/latency_bench.rs... | completed/issue_closed_upstream | 2026-07-20 |
 
 ## Waiting for Human
 
