@@ -50,11 +50,12 @@ pub struct ActionEvidence {
     pub causal_chain_id: Option<String>,
     pub recording_mode: RecordingMode,
     pub capability_decision: Option<CapabilityDecision>,
-    /// `McpHeaderRisk` variant name in `snake_case` when MCP header leakage is
-    /// detected, else `None`. Serializes as a lowercase string (e.g.
-    /// `"credential_leak"`) via `#[serde(rename_all = "snake_case")]` on the
-    /// enum, so downstream consumers need no Rust enum definition to read it.
-    pub mcp_header_risk: Option<McpHeaderRisk>,
+    /// `McpHeaderRisk` variant name in `snake_case` (e.g. `credential_leak`)
+    /// when MCP header leakage is detected, else `None`. Stored as a plain
+    /// `String` so the serialized AEP record uses stable lowercase identifiers
+    /// and downstream consumers need no Rust enum definition to read it.
+    /// Producers convert from the enum via [`McpHeaderRisk::as_str`].
+    pub mcp_header_risk: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,11 +103,46 @@ mod tests {
             causal_chain_id: None,
             recording_mode: RecordingMode::Full,
             capability_decision: None,
-            mcp_header_risk: Some(McpHeaderRisk::CredentialLeak),
+            mcp_header_risk: Some("credential_leak".into()),
         };
 
         let value = serde_json::to_value(evidence).expect("serialize ActionEvidence");
 
         assert_eq!(value["mcp_header_risk"], "credential_leak");
+    }
+
+    #[test]
+    fn action_evidence_mcp_header_risk_round_trips_as_plain_string() {
+        // The field is `Option<String>` carrying the snake_case variant name:
+        // prove it survives a serialize→deserialize round trip as a plain
+        // string (not an enum), so downstream consumers need no Rust enum
+        // definition to read it. Exercises the HighEntropyValue variant, which
+        // the serialize-only test above does not cover.
+        let original = ActionEvidence {
+            action_id: "action-rt".into(),
+            tool_name: "POST /mcp".into(),
+            state_changing: true,
+            precondition_digest: None,
+            result_digest: None,
+            timestamp_ms: 1_700_000_000_001,
+            parent_action_id: None,
+            causal_chain_id: None,
+            recording_mode: RecordingMode::Validation,
+            capability_decision: None,
+            mcp_header_risk: Some(McpHeaderRisk::HighEntropyValue.as_str().into()),
+        };
+
+        let json = serde_json::to_string(&original).expect("serialize ActionEvidence");
+        assert!(
+            json.contains("\"mcp_header_risk\":\"high_entropy_value\""),
+            "expected snake_case variant name in JSON, got: {json}"
+        );
+
+        let decoded: ActionEvidence =
+            serde_json::from_str(&json).expect("deserialize ActionEvidence");
+        assert_eq!(
+            decoded.mcp_header_risk.as_deref(),
+            Some(McpHeaderRisk::HighEntropyValue.as_str())
+        );
     }
 }
