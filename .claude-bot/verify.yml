@@ -24,3 +24,7 @@ commands:
     cmd: "PATH=/root/.cargo/bin:$PATH cargo clippy --workspace -- -W clippy::pedantic -W clippy::nursery 2>&1 | head -100"
     timeout: 5m
     level: 4
+  - name: no-unwrap-in-prod
+    cmd: "PATH=/root/.cargo/bin:$PATH cargo clippy --workspace -- -W clippy::unwrap_used -W clippy::panic -W clippy::expect_used 2>&1 | grep -E 'warning|error' | head -50"
+    timeout: 5m
+    level: 4
