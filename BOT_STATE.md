@@ -1,25 +1,25 @@
 # Bot State
 
-_Last updated: 2026-07-21 01:23 UTC by patrol_
+_Last updated: 2026-07-21 02:06 UTC by patrol_
 
 ## Queue
 
 | State | Count |
 |---|---|
-| Pending | 0 |
-| Active (running/reviewing) | 0 |
+| Pending | 1 |
+| Active (running/reviewing) | 1 |
 | Blocked | 1 |
-| Completed/Merged (all time) | 229 |
+| Completed/Merged (all time) | 232 |
 
 ## Recent Activity (last 5)
 
 | Issue | Title | Outcome | Date |
 |---|---|---|---|
+| #218 | [milestone Milestone 2 ] Extend `ActionEvidence` in `crat... | merged/auto_closed_resolved | 2026-07-21 |
+| #219 | [milestone Milestone 4 ] Add `crates/proxy-wasm-evidence/... | merged/auto_closed_resolved | 2026-07-21 |
+| #220 | [milestone Milestone 4 ] Add `crates/proxy-wasm-evidence/... | merged/auto_closed_resolved | 2026-07-21 |
 | #210 | [milestone Milestone 2 ] Update `build_evidence()` in `cr... | merged/auto_closed_resolved | 2026-07-21 |
 | #214 | chore: add level:4 strict gate probes to verify.yml (unwr... | merged/merged | 2026-07-21 |
-| #207 | [milestone Milestone 1 ] Fix `crates/proxy-wasm-evidence/... | merged/auto_closed_resolved | 2026-07-21 |
-| #209 | [milestone Milestone 2 ] Extend `ActionEvidence` in `crat... | merged/auto_closed_resolved | 2026-07-21 |
-| #208 | [milestone Milestone 2 ] Promote `classify_mcp_headers()`... | merged/auto_closed_resolved | 2026-07-21 |
 
 ## Waiting for Human
 
