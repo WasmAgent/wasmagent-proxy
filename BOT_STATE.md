@@ -1,25 +1,25 @@
 # Bot State
 
-_Last updated: 2026-07-21 15:08 UTC by patrol_
+_Last updated: 2026-07-21 15:54 UTC by patrol_
 
 ## Queue
 
 | State | Count |
 |---|---|
-| Pending | 5 |
-| Active (running/reviewing) | 1 |
+| Pending | 0 |
+| Active (running/reviewing) | 0 |
 | Blocked | 2 |
-| Completed/Merged (all time) | 267 |
+| Completed/Merged (all time) | 273 |
 
 ## Recent Activity (last 5)
 
 | Issue | Title | Outcome | Date |
 |---|---|---|---|
-| #257 | [milestone Milestone 4 ] Add `crates/proxy-wasm-evidence/... | merged/auto_closed_resolved | 2026-07-21 |
-| #188 | chore: improve .claude-bot/verify.yml for faster bot feed... | merged/auto_closed_resolved | 2026-07-21 |
-| #248 | [milestone Milestone 1 ] Fix `crates/proxy-wasm-evidence/... | merged/auto_closed_resolved | 2026-07-21 |
-| #249 | [milestone Milestone 2 ] Promote `classify_mcp_headers()`... | merged/auto_closed_resolved | 2026-07-21 |
-| #251 | [milestone Milestone 2 ] Update `build_evidence()` in `cr... | merged/auto_closed_resolved | 2026-07-21 |
+| #253 | [milestone Milestone 1 ] Fix `crates/proxy-wasm-evidence/... | merged/auto_closed_resolved | 2026-07-21 |
+| #258 | [milestone Milestone 4 ] Add `crates/proxy-wasm-evidence/... | merged/auto_closed_resolved | 2026-07-21 |
+| #259 | [milestone Milestone 4 ] Add `crates/proxy-wasm-evidence/... | merged/auto_closed_resolved | 2026-07-21 |
+| #254 | [milestone Milestone 2 ] Promote `classify_mcp_headers()`... | merged/auto_closed_resolved | 2026-07-21 |
+| #255 | [milestone Milestone 2 ] Extend `ActionEvidence` in `crat... | merged/auto_closed_resolved | 2026-07-21 |
 
 ## Waiting for Human
 
