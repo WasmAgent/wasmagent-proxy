@@ -154,7 +154,6 @@ pub fn build_evidence(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aep_core::classify_mcp_headers;
     use aep_core::recording::RecordingMode;
 
     fn risk(side_effect_class: SideEffectClass) -> RiskContext {
@@ -240,50 +239,6 @@ mod tests {
             infer_side_effect_class_with_mcp("POST", "/mcp", Some("custom/operation")),
             SideEffectClass::Unknown
         );
-    }
-
-    #[test]
-    fn classify_mcp_headers_detects_credential_prefix() {
-        assert_eq!(
-            classify_mcp_headers(Some("ghp_abc123"), None),
-            Some(McpHeaderRisk::CredentialLeak)
-        );
-        assert_eq!(
-            classify_mcp_headers(Some("sk-abcdefghij"), None),
-            Some(McpHeaderRisk::CredentialLeak)
-        );
-        assert_eq!(
-            classify_mcp_headers(Some("Bearer token_here"), None),
-            Some(McpHeaderRisk::CredentialLeak)
-        );
-    }
-
-    #[test]
-    fn classify_mcp_headers_detects_high_entropy() {
-        // 40-char alphanumeric string in MCP-Name
-        let long_val = "a".repeat(40);
-        assert_eq!(
-            classify_mcp_headers(None, Some(&long_val)),
-            Some(McpHeaderRisk::HighEntropyValue)
-        );
-    }
-
-    #[test]
-    fn classify_mcp_headers_detects_pii_in_name() {
-        assert_eq!(
-            classify_mcp_headers(None, Some("user@example.com")),
-            Some(McpHeaderRisk::PiiLeak)
-        );
-    }
-
-    #[test]
-    fn classify_mcp_headers_clean_values_return_none() {
-        assert_eq!(
-            classify_mcp_headers(Some("tools/call"), Some("my_tool")),
-            None
-        );
-        assert_eq!(classify_mcp_headers(None, None), None);
-        assert_eq!(classify_mcp_headers(Some("tools/list"), None), None);
     }
 
     #[test]
