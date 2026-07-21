@@ -20,3 +20,7 @@ commands:
     cmd: "PATH=/root/.cargo/bin:$PATH cargo clippy --workspace -- -D warnings"
     timeout: 3m
     level: 4
+  - name: clippy-pedantic
+    cmd: "PATH=/root/.cargo/bin:$PATH cargo clippy --workspace -- -W clippy::pedantic -W clippy::nursery 2>&1 | head -100"
+    timeout: 5m
+    level: 4
