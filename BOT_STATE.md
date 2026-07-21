@@ -1,6 +1,6 @@
 # Bot State
 
-_Last updated: 2026-07-21 08:01 UTC by patrol_
+_Last updated: 2026-07-21 08:12 UTC by patrol_
 
 ## Queue
 
@@ -8,21 +8,22 @@ _Last updated: 2026-07-21 08:01 UTC by patrol_
 |---|---|
 | Pending | 0 |
 | Active (running/reviewing) | 0 |
-| Blocked | 1 |
-| Completed/Merged (all time) | 252 |
+| Blocked | 2 |
+| Completed/Merged (all time) | 254 |
 
 ## Recent Activity (last 5)
 
 | Issue | Title | Outcome | Date |
 |---|---|---|---|
+| #240 | [milestone Milestone 1 ] Fix `crates/proxy-wasm-evidence/... | merged/auto_closed_resolved | 2026-07-21 |
+| #242 | [milestone Milestone 2 ] Extend `ActionEvidence` in `crat... | merged/auto_closed_resolved | 2026-07-21 |
 | #237 | [milestone Milestone 1 ] Fix `crates/proxy-wasm-evidence/... | merged/auto_closed_resolved | 2026-07-21 |
 | #238 | [milestone Milestone 2 ] Promote `classify_mcp_headers()`... | merged/auto_closed_resolved | 2026-07-21 |
 | #239 | [milestone Milestone 2 ] Extend `ActionEvidence` in `crat... | merged/auto_closed_resolved | 2026-07-21 |
-| #234 | [milestone Milestone 1 ] Fix `crates/proxy-wasm-evidence/... | merged/auto_closed_resolved | 2026-07-21 |
-| #236 | [milestone Milestone 2 ] Extend `ActionEvidence` in `crat... | merged/auto_closed_resolved | 2026-07-21 |
 
 ## Waiting for Human
 
+- #241: [milestone Milestone 2 ] Promote `classify_mcp_headers()` from `crates/proxy-wasm-evidence/src/recorder.r...
 - #86: [milestone Milestone 1] Add mcp_method and mcp_name fields to evidence struct in crates/proxy-wasm-evidence/src/filter.rs
 - #85: [milestone Milestone 4] Extract and export compile_recording_policy() for external testing
 - #80: [milestone Milestone 4 ] Add `benchmarks/latency_bench.rs` criterion benchmark for `compile_recording_pol...
