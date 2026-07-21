@@ -1,6 +1,6 @@
 # Bot State
 
-_Last updated: 2026-07-21 06:28 UTC by patrol_
+_Last updated: 2026-07-21 06:39 UTC by patrol_
 
 ## Queue
 
@@ -9,17 +9,17 @@ _Last updated: 2026-07-21 06:28 UTC by patrol_
 | Pending | 0 |
 | Active (running/reviewing) | 0 |
 | Blocked | 1 |
-| Completed/Merged (all time) | 246 |
+| Completed/Merged (all time) | 249 |
 
 ## Recent Activity (last 5)
 
 | Issue | Title | Outcome | Date |
 |---|---|---|---|
+| #234 | [milestone Milestone 1 ] Fix `crates/proxy-wasm-evidence/... | merged/auto_closed_resolved | 2026-07-21 |
+| #236 | [milestone Milestone 2 ] Extend `ActionEvidence` in `crat... | merged/auto_closed_resolved | 2026-07-21 |
+| #235 | [milestone Milestone 2 ] Promote `classify_mcp_headers()`... | merged/auto_closed_resolved | 2026-07-21 |
 | #233 | [milestone Milestone 4 ] Add `benchmarks/latency_bench.rs... | merged/auto_closed_resolved | 2026-07-21 |
 | #229 | [milestone Milestone 2 ] Extend `ActionEvidence` in `crat... | merged/auto_closed_resolved | 2026-07-21 |
-| #228 | [milestone Milestone 2 ] Promote `classify_mcp_headers()`... | merged/auto_closed_resolved | 2026-07-21 |
-| #227 | [milestone Milestone 1 ] Fix `crates/proxy-wasm-evidence/... | merged/auto_closed_resolved | 2026-07-21 |
-| #231 | [milestone Milestone 4 ] Add `crates/proxy-wasm-evidence/... | merged/auto_closed_resolved | 2026-07-21 |
 
 ## Waiting for Human
 
