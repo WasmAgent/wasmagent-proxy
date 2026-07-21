@@ -149,6 +149,15 @@ impl HttpContext for EvidenceFilter {
             "x-aep-recording-mode",
             Some(evidence.recording_mode.as_str()),
         );
+        // Surface MCP 2026-07-28 header leakage detection on the response so
+        // downstream observers can react without parsing the AEP record body.
+        // Carries the same snake_case variant name stored on
+        // `ActionEvidence::mcp_header_risk`; omitted entirely when no risk was
+        // detected (None clears/omits the header).
+        self.set_http_response_header(
+            "x-aep-mcp-header-risk",
+            evidence.mcp_header_risk.as_deref(),
+        );
         // Increment the appropriate Prometheus counter for this recording mode.
         let metric_id = match evidence.recording_mode {
             RecordingMode::Validation => self.metric_validation,
