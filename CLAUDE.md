@@ -176,7 +176,7 @@ Bot: implement issues in order. When an issue closes, open the next unchecked it
 - [ ] feat: `deploy/k8s/signing-secret.yaml` — document how to inject Ed25519 key as K8s secret
 
 ### Phase 4: Integration with wasmagent-js
-- [ ] feat: AEP records from proxy match FAEP v0.1 schema (`@wasmagent/faep-schema`)
+- [ ] feat: AEP records from proxy conform to `@wasmagent/aep` v0.2 schema (not FAEP — FAEP is FreshArena's evaluation protocol)
 - [ ] feat: shared `trace_id` header (`x-b3-traceid`) passed through to wasmagent-js MCP firewall
 - [ ] feat: `x-aep-bundle-id` response header — unique ID for the signed evidence bundle
 - [ ] docs: architecture diagram showing proxy + wasmagent-js evidence joining via trace_id
