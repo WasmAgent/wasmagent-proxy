@@ -1,6 +1,6 @@
 # Bot State
 
-_Last updated: 2026-07-22 08:42 UTC by patrol_
+_Last updated: 2026-07-22 09:03 UTC by patrol_
 
 ## Queue
 
@@ -9,17 +9,17 @@ _Last updated: 2026-07-22 08:42 UTC by patrol_
 | Pending | 0 |
 | Active (running/reviewing) | 0 |
 | Blocked | 0 |
-| Completed/Merged (all time) | 294 |
+| Completed/Merged (all time) | 296 |
 
 ## Recent Activity (last 5)
 
 | Issue | Title | Outcome | Date |
 |---|---|---|---|
+| #284 | [milestone Milestone 2 ] Update `on_http_response_headers... | merged/auto_closed_resolved | 2026-07-22 |
+| #285 | [milestone Milestone 4 ] Add `crates/proxy-wasm-evidence/... | merged/auto_closed_resolved | 2026-07-22 |
 | #283 | [milestone Milestone 2 ] Update `on_http_response_headers... | merged/auto_closed_resolved | 2026-07-22 |
 | #281 | [milestone Milestone 4 ] Add `crates/proxy-wasm-evidence/... | merged/auto_closed_resolved | 2026-07-22 |
 | #282 | [milestone Milestone 2 ] Update `on_http_response_headers... | merged/auto_closed_resolved | 2026-07-22 |
-| #279 | [milestone Milestone 4 ] Add `crates/proxy-wasm-evidence/... | merged/auto_closed_resolved | 2026-07-22 |
-| #278 | [milestone Milestone 2 ] Update `on_http_response_headers... | merged/auto_closed_resolved | 2026-07-22 |
 
 ## Waiting for Human
 
