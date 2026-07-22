@@ -156,6 +156,9 @@ impl HttpContext for EvidenceFilter {
             RecordingMode::Full => self.metric_full,
         };
         let _ = increment_metric(metric_id, 1);
+        if let Some(ref risk_str) = evidence.mcp_header_risk {
+            self.set_http_response_header("x-aep-mcp-header-risk", Some(risk_str));
+        }
         let _ = self.evidence_buffer.push(evidence);
         Action::Continue
     }
