@@ -124,8 +124,17 @@ impl HttpContext for EvidenceFilter {
         self.path = self.get_http_request_header(":path").unwrap_or_default();
         self.trace_id = self.get_http_request_header(&self.config.trace_id_header);
         self.agent_id = self.get_http_request_header(&self.config.agent_id_header);
-        self.mcp_method = self.get_http_request_header("mcp-method");
-        self.mcp_name = self.get_http_request_header("mcp-name");
+        // Capture mcp_method from "x-mcp-method" (prefixed variant) or
+        // "mcp-method" (bare variant). proxy-wasm normalises header names to
+        // lowercase, so both "X-MCP-Method" and "MCP-Method" map to the same
+        // lookup key.
+        self.mcp_method = self
+            .get_http_request_header("x-mcp-method")
+            .or_else(|| self.get_http_request_header("mcp-method"));
+        // Capture mcp_name from "mcp-name" or "x-mcp-name".
+        self.mcp_name = self
+            .get_http_request_header("mcp-name")
+            .or_else(|| self.get_http_request_header("x-mcp-name"));
         Action::Continue
     }
 
