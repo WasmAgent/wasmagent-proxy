@@ -4,6 +4,19 @@ use sha2::{Digest, Sha256};
 
 pub use ed25519_dalek::SigningKey;
 
+/// Errors that can occur during signature verification.
+#[derive(Debug, PartialEq, Eq)]
+pub enum VerificationError {
+    /// The record has no signature attached.
+    MissingSignature,
+    /// The signature hex string could not be decoded.
+    MalformedSignatureHex,
+    /// The decoded signature bytes are not the expected length.
+    InvalidSignatureLength,
+    /// The cryptographic verification failed (wrong key or tampered data).
+    SignatureMismatch,
+}
+
 pub fn sign_record(record: &mut AepRecord, key: &DalekSigningKey, key_id: &str) {
     let canonical = canonical_bytes(record);
     let sig = key.sign(&canonical);
@@ -14,21 +27,24 @@ pub fn sign_record(record: &mut AepRecord, key: &DalekSigningKey, key_id: &str) 
     });
 }
 
-pub fn verify_record(record: &AepRecord, verifying_key: &VerifyingKey) -> bool {
-    let Some(sig_meta) = &record.signature else {
-        return false;
-    };
-    let Ok(sig_bytes) = hex::decode(&sig_meta.sig) else {
-        return false;
-    };
-    let Ok(sig_array) = sig_bytes.try_into() else {
-        return false;
-    };
+pub fn verify_record(record: &AepRecord, verifying_key: &VerifyingKey) -> Result<(), VerificationError> {
+    let sig_meta = record
+        .signature
+        .as_ref()
+        .ok_or(VerificationError::MissingSignature)?;
+    let sig_bytes =
+        hex::decode(&sig_meta.sig).map_err(|_| VerificationError::MalformedSignatureHex)?;
+    let sig_array: [u8; ed25519_dalek::Signature::BYTE_SIZE] =
+        sig_bytes
+            .try_into()
+            .map_err(|_| VerificationError::InvalidSignatureLength)?;
     let sig = ed25519_dalek::Signature::from_bytes(&sig_array);
     let mut unsigned = record.clone();
     unsigned.signature = None;
     let canonical = canonical_bytes(&unsigned);
-    verifying_key.verify_strict(&canonical, &sig).is_ok()
+    verifying_key
+        .verify_strict(&canonical, &sig)
+        .map_err(|_| VerificationError::SignatureMismatch)
 }
 
 fn canonical_bytes(record: &AepRecord) -> Vec<u8> {
@@ -84,7 +100,7 @@ mod tests {
         assert_eq!(sig.key_id, "key-1");
 
         // Verify must succeed with the correct key.
-        assert!(verify_record(&record, &pubkey));
+        assert!(verify_record(&record, &pubkey).is_ok());
     }
 
     #[test]
@@ -98,7 +114,7 @@ mod tests {
         // Tamper with a field after signing.
         record.run_id = "tampered-run".into();
 
-        assert!(!verify_record(&record, &pubkey));
+        assert!(verify_record(&record, &pubkey).is_err());
     }
 
     #[test]
@@ -112,7 +128,7 @@ mod tests {
         // Tamper inside an action element.
         record.actions[0].tool_name = "malicious-tool".into();
 
-        assert!(!verify_record(&record, &pubkey));
+        assert!(verify_record(&record, &pubkey).is_err());
     }
 
     #[test]
@@ -124,7 +140,7 @@ mod tests {
 
         sign_record(&mut record, &key, "key-1");
 
-        assert!(!verify_record(&record, &wrong_pubkey));
+        assert!(verify_record(&record, &wrong_pubkey).is_err());
     }
 
     #[test]
@@ -133,6 +149,9 @@ mod tests {
         let key = DalekSigningKey::generate(&mut rand::rngs::OsRng);
         let pubkey: VerifyingKey = key.verifying_key();
 
-        assert!(!verify_record(&record, &pubkey));
+        assert_eq!(
+            verify_record(&record, &pubkey),
+            Err(VerificationError::MissingSignature)
+        );
     }
 }
