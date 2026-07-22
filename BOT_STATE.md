@@ -1,6 +1,6 @@
 # Bot State
 
-_Last updated: 2026-07-22 13:46 UTC by patrol_
+_Last updated: 2026-07-22 13:47 UTC by patrol_
 
 ## Queue
 
@@ -23,9 +23,6 @@ _Last updated: 2026-07-22 13:46 UTC by patrol_
 
 ## Waiting for Human
 
-- #86: [milestone Milestone 1] Add mcp_method and mcp_name fields to evidence struct in crates/proxy-wasm-evidence/src/filter.rs
-- #85: [milestone Milestone 4] Extract and export compile_recording_policy() for external testing
-- #80: [milestone Milestone 4 ] Add `benchmarks/latency_bench.rs` criterion benchmark for `compile_recording_pol...
 - #79: [milestone Milestone 1 ] Fix `crates/proxy-wasm-evidence/src/filter.rs` `on_http_request_headers()`: capt...
 
 ---
