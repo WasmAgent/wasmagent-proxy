@@ -1,14 +1,14 @@
 # Bot State
 
-_Last updated: 2026-07-22 13:47 UTC by patrol_
+_Last updated: 2026-07-22 13:57 UTC by patrol_
 
 ## Queue
 
 | State | Count |
 |---|---|
 | Pending | 0 |
-| Active (running/reviewing) | 1 |
-| Blocked | 0 |
+| Active (running/reviewing) | 0 |
+| Blocked | 1 |
 | Completed/Merged (all time) | 299 |
 
 ## Recent Activity (last 5)
@@ -23,7 +23,7 @@ _Last updated: 2026-07-22 13:47 UTC by patrol_
 
 ## Waiting for Human
 
-- #79: [milestone Milestone 1 ] Fix `crates/proxy-wasm-evidence/src/filter.rs` `on_http_request_headers()`: capt...
+- #290: [milestone Milestone 4 ] Add `crates/proxy-wasm-evidence/src/config.rs` `Config::max_evidence_buffer` fie...
 
 ---
 _Maintained automatically by claude-bot-go patrol. Do not edit._
