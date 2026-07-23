@@ -30,7 +30,8 @@ traffic, classifies side-effects, and emits signed PROV-DM structured evidence.
 
 | Capability | Owner |
 |---|---|
-| AEP schema definition and versioning | `wasmagent-js` (`@wasmagent/aep`) |
+| AEP + compliance **schema definitions** | `wasmagent-protocol` (`@wasmagent/protocol`) |
+| AEP evidence **emission** at runtime | `wasmagent-js` (`@wasmagent/aep`) |
 | Process-internal MCP firewall, capability attestation | `wasmagent-js` (`@wasmagent/mcp-gateway`, `@wasmagent/mcp-attestation`) |
 | MCP Posture risk taxonomy (named risk patterns, including MCP-Method/MCP-Name leakage as a risk entry) | `agent-trust-infra` (`specs/mcp-posture/`) |
 | Trust Passport specification and product | `open-agent-audit` (`@openagentaudit/passport`) |
@@ -39,7 +40,7 @@ traffic, classifies side-effects, and emits signed PROV-DM structured evidence.
 | Training data pipeline | `trace-pipeline` |
 
 ### Allowed cross-repo patterns
-- AEP record format is defined by `wasmagent-js`; `aep-core` here implements that format — pin against published `@wasmagent/aep` schema versions, never fork the schema.
+- AEP record format is defined by `wasmagent-protocol`; `aep-core` here implements that format — pin against published `@wasmagent/protocol` schema versions, never fork the schema.
 - MCP-Method/MCP-Name header leakage **detection** lives here (`classify_mcp_headers`); the **risk taxonomy entry** naming this pattern lives in `agent-trust-infra` `specs/mcp-posture/` — link to it, don't redefine it.
 - Gateway evidence and process evidence join via shared `trace_id` (`x-b3-traceid` header) — the only coupling point with `wasmagent-js`; keep it stable.
 - Capability boundary: this proxy only observes traffic passing through the gateway; document this limitation, do not claim endpoint-local visibility.
