@@ -72,7 +72,7 @@ mod tests {
     #[test]
     fn round_trip_sign_and_verify() {
         let mut record = test_record();
-        let key = DalekSigningKey::generate(&mut rand::rngs::OsRng);
+        let key = DalekSigningKey::generate(&mut rand::rng());
         let pubkey: VerifyingKey = key.verifying_key();
 
         sign_record(&mut record, &key, "key-1");
@@ -90,7 +90,7 @@ mod tests {
     #[test]
     fn tampered_payload_fails_verification() {
         let mut record = test_record();
-        let key = DalekSigningKey::generate(&mut rand::rngs::OsRng);
+        let key = DalekSigningKey::generate(&mut rand::rng());
         let pubkey: VerifyingKey = key.verifying_key();
 
         sign_record(&mut record, &key, "key-1");
@@ -104,7 +104,7 @@ mod tests {
     #[test]
     fn tampered_action_fails_verification() {
         let mut record = test_record();
-        let key = DalekSigningKey::generate(&mut rand::rngs::OsRng);
+        let key = DalekSigningKey::generate(&mut rand::rng());
         let pubkey: VerifyingKey = key.verifying_key();
 
         sign_record(&mut record, &key, "key-1");
@@ -118,8 +118,8 @@ mod tests {
     #[test]
     fn wrong_key_fails_verification() {
         let mut record = test_record();
-        let key = DalekSigningKey::generate(&mut rand::rngs::OsRng);
-        let other_key = DalekSigningKey::generate(&mut rand::rngs::OsRng);
+        let key = DalekSigningKey::generate(&mut rand::rng());
+        let other_key = DalekSigningKey::generate(&mut rand::rng());
         let wrong_pubkey: VerifyingKey = other_key.verifying_key();
 
         sign_record(&mut record, &key, "key-1");
@@ -130,7 +130,7 @@ mod tests {
     #[test]
     fn unsigned_record_fails_verification() {
         let record = test_record(); // signature is None
-        let key = DalekSigningKey::generate(&mut rand::rngs::OsRng);
+        let key = DalekSigningKey::generate(&mut rand::rng());
         let pubkey: VerifyingKey = key.verifying_key();
 
         assert!(!verify_record(&record, &pubkey));
