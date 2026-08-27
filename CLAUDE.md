@@ -5,6 +5,46 @@ Rust Proxy-Wasm module that adds cryptographic AEP (Agent Evidence Protocol) evi
 recording to any Proxy-Wasm compatible gateway (Envoy, Istio, Kong). Intercepts HTTP
 traffic, classifies side-effects, and emits signed PROV-DM structured evidence.
 
+
+## Repository maturity
+
+| | |
+|---|---|
+| **Status** | Experimental |
+| **Contract stability** | Evolving |
+| **Recommended for** | Gateway-level MCP/Agent/A2A traffic evidence; Envoy/Istio/Kong sidecar audit |
+| **Not recommended for** | Endpoint-local MCP servers (outside proxy observability); general gateway RBAC/routing |
+
+## Repository Boundaries
+
+### This repository owns
+- Proxy-Wasm filter (`proxy-wasm-evidence`) — intercepts HTTP traffic at gateway layer
+- Side-effect classification (read / mutate-local / mutate-external / network-egress)
+- `validation → delta → full` recording policy for gateway traffic
+- PROV-DM structured `AEPRecord` with Ed25519 signing (DSSE envelope)
+- MCP 2026-07-28 header leakage detection (`classify_mcp_headers`)
+- `aep-core` crate — shared recording types consumed by the filter
+- Deployment configs (Envoy, Istio, K8s)
+
+### Other repositories own — do not duplicate here
+
+| Capability | Owner |
+|---|---|
+| AEP + compliance **schema definitions** | `wasmagent-protocol` (`@wasmagent/protocol`) |
+| AEP evidence **emission** at runtime | `wasmagent-js` (`@wasmagent/aep`) |
+| Process-internal MCP firewall, capability attestation | `wasmagent-js` (`@wasmagent/mcp-gateway`, `@wasmagent/mcp-attestation`) |
+| MCP Posture risk taxonomy (named risk patterns, including MCP-Method/MCP-Name leakage as a risk entry) | `agent-trust-infra` (`specs/mcp-posture/`) |
+| Trust Passport specification and product | `open-agent-audit` (`@openagentaudit/passport`) |
+| Enterprise audit report, regulatory mapping | `open-agent-audit` |
+| Symbolic verification (CEL, wazero, Z3) | `symkernel` |
+| Training data pipeline | `trace-pipeline` |
+
+### Allowed cross-repo patterns
+- AEP record format is defined by `wasmagent-protocol`; `aep-core` here implements that format — pin against published `@wasmagent/protocol` schema versions, never fork the schema.
+- MCP-Method/MCP-Name header leakage **detection** lives here (`classify_mcp_headers`); the **risk taxonomy entry** naming this pattern lives in `agent-trust-infra` `specs/mcp-posture/` — link to it, don't redefine it.
+- Gateway evidence and process evidence join via shared `trace_id` (`x-b3-traceid` header) — the only coupling point with `wasmagent-js`; keep it stable.
+- Capability boundary: this proxy only observes traffic passing through the gateway; document this limitation, do not claim endpoint-local visibility.
+
 ## Relationship to WasmAgent ecosystem
 ```
 Agent/MCP traffic → Envoy/Istio/Kong gateway
@@ -137,7 +177,7 @@ Bot: implement issues in order. When an issue closes, open the next unchecked it
 - [ ] feat: `deploy/k8s/signing-secret.yaml` — document how to inject Ed25519 key as K8s secret
 
 ### Phase 4: Integration with wasmagent-js
-- [ ] feat: AEP records from proxy match FAEP v0.1 schema (`@wasmagent/faep-schema`)
+- [ ] feat: AEP records from proxy conform to `@wasmagent/aep` v0.2 schema (not FAEP — FAEP is FreshArena's evaluation protocol)
 - [ ] feat: shared `trace_id` header (`x-b3-traceid`) passed through to wasmagent-js MCP firewall
 - [ ] feat: `x-aep-bundle-id` response header — unique ID for the signed evidence bundle
 - [ ] docs: architecture diagram showing proxy + wasmagent-js evidence joining via trace_id

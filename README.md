@@ -1,5 +1,13 @@
 # wasmagent-proxy
 
+| | |
+|---|---|
+| **Status** | Experimental |
+| **Contract stability** | Evolving |
+| **Recommended for** | Gateway-level AEP evidence; Envoy/Istio/Kong sidecar |
+| **Not recommended for** | Endpoint-local MCP servers; general gateway RBAC/routing |
+
+
 > Proxy-Wasm evidence engine — cryptographic AEP audit layer for Agent/MCP/A2A traffic
 
 A Wasm module that plugs into any [Proxy-Wasm](https://github.com/proxy-wasm/spec)-compatible
@@ -92,3 +100,5 @@ causal graph from gateway ingress to Agent tool call.
 ## License
 
 Apache-2.0
+
+Part of the [WasmAgent](https://github.com/WasmAgent) ecosystem.

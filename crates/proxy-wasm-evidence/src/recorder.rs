@@ -6,6 +6,10 @@ use aep_core::{
     McpHeaderRisk,
 };
 
+/// Default maximum number of in-flight evidence entries retained by
+/// [`EvidenceBuffer`].
+pub const DEFAULT_EVIDENCE_BUFFER_CAPACITY: usize = 1024;
+
 /// Bounded ring-buffer for in-flight evidence entries.
 ///
 /// Holds at most `capacity` [`ActionEvidence`] records. When the buffer is full
@@ -32,7 +36,7 @@ impl EvidenceBuffer {
 
     /// Create a new buffer with the default capacity of 1024 entries.
     pub fn with_defaults() -> Self {
-        Self::new(1024)
+        Self::new(DEFAULT_EVIDENCE_BUFFER_CAPACITY)
     }
 
     /// Push an entry into the buffer. If the buffer is full, the oldest entry
@@ -40,7 +44,7 @@ impl EvidenceBuffer {
     ///
     /// Returns `Some(evicted)` when an entry was displaced, `None` otherwise.
     pub fn push(&mut self, evidence: ActionEvidence) -> Option<ActionEvidence> {
-        let evicted = if self.entries.len() == self.capacity {
+        let evicted = if self.entries.len() >= self.capacity {
             self.entries.pop_front()
         } else {
             None
@@ -70,45 +74,10 @@ impl EvidenceBuffer {
     }
 }
 
-/// Check MCP-Method and MCP-Name header values for sensitive-data leakage patterns.
-///
-/// Returns the highest-severity risk detected, or None if no risk is found.
-/// Called from the gateway filter before recording; a Some result causes the
-/// evidence record to be annotated with x-aep-mcp-header-risk.
-pub fn classify_mcp_headers(
-    mcp_method: Option<&str>,
-    mcp_name: Option<&str>,
-) -> Option<McpHeaderRisk> {
-    const CREDENTIAL_PREFIXES: &[&str] = &["ghp_", "ghb_", "sk-", "Bearer ", "token ", "api_"];
-    const MIN_HIGH_ENTROPY_LEN: usize = 32;
-
-    for val in [mcp_method, mcp_name].into_iter().flatten() {
-        // Credential prefix detection (case-insensitive)
-        let lower = val.to_lowercase();
-        for prefix in CREDENTIAL_PREFIXES {
-            if lower.starts_with(&prefix.to_lowercase() as &str) {
-                return Some(McpHeaderRisk::CredentialLeak);
-            }
-        }
-        // High-entropy detection: long alphanumeric strings
-        let alnum_run: usize = val
-            .split(|c: char| !c.is_alphanumeric())
-            .map(|s| s.len())
-            .max()
-            .unwrap_or(0);
-        if alnum_run >= MIN_HIGH_ENTROPY_LEN {
-            return Some(McpHeaderRisk::HighEntropyValue);
-        }
+impl Default for EvidenceBuffer {
+    fn default() -> Self {
+        Self::with_defaults()
     }
-
-    // PII: email pattern in MCP-Name
-    if let Some(name) = mcp_name {
-        if name.contains('@') && name.contains('.') {
-            return Some(McpHeaderRisk::PiiLeak);
-        }
-    }
-
-    None
 }
 
 /// Infer SideEffectClass from HTTP method + path heuristics, with optional
@@ -178,7 +147,7 @@ pub fn build_evidence(
         causal_chain_id: None,
         recording_mode: policy.mode,
         capability_decision: None,
-        mcp_header_risk,
+        mcp_header_risk: mcp_header_risk.map(|r| r.as_str().to_string()),
     }
 }
 
@@ -273,50 +242,6 @@ mod tests {
     }
 
     #[test]
-    fn classify_mcp_headers_detects_credential_prefix() {
-        assert_eq!(
-            classify_mcp_headers(Some("ghp_abc123"), None),
-            Some(McpHeaderRisk::CredentialLeak)
-        );
-        assert_eq!(
-            classify_mcp_headers(Some("sk-abcdefghij"), None),
-            Some(McpHeaderRisk::CredentialLeak)
-        );
-        assert_eq!(
-            classify_mcp_headers(Some("Bearer token_here"), None),
-            Some(McpHeaderRisk::CredentialLeak)
-        );
-    }
-
-    #[test]
-    fn classify_mcp_headers_detects_high_entropy() {
-        // 40-char alphanumeric string in MCP-Name
-        let long_val = "a".repeat(40);
-        assert_eq!(
-            classify_mcp_headers(None, Some(&long_val)),
-            Some(McpHeaderRisk::HighEntropyValue)
-        );
-    }
-
-    #[test]
-    fn classify_mcp_headers_detects_pii_in_name() {
-        assert_eq!(
-            classify_mcp_headers(None, Some("user@example.com")),
-            Some(McpHeaderRisk::PiiLeak)
-        );
-    }
-
-    #[test]
-    fn classify_mcp_headers_clean_values_return_none() {
-        assert_eq!(
-            classify_mcp_headers(Some("tools/call"), Some("my_tool")),
-            None
-        );
-        assert_eq!(classify_mcp_headers(None, None), None);
-        assert_eq!(classify_mcp_headers(Some("tools/list"), None), None);
-    }
-
-    #[test]
     fn build_evidence_marks_reads_as_non_state_changing() {
         let ev = build_evidence(
             "ctx-1".into(),
@@ -364,7 +289,7 @@ mod tests {
             None,
             Some(McpHeaderRisk::CredentialLeak),
         );
-        assert_eq!(ev.mcp_header_risk, Some(McpHeaderRisk::CredentialLeak));
+        assert_eq!(ev.mcp_header_risk.as_deref(), Some("credential_leak"));
 
         let ev2 = build_evidence(
             "ctx-4".into(),
@@ -374,7 +299,7 @@ mod tests {
             None,
             Some(McpHeaderRisk::PiiLeak),
         );
-        assert_eq!(ev2.mcp_header_risk, Some(McpHeaderRisk::PiiLeak));
+        assert_eq!(ev2.mcp_header_risk.as_deref(), Some("pii_leak"));
     }
 
     // --- EvidenceBuffer tests ---
@@ -404,9 +329,16 @@ mod tests {
     #[test]
     fn evidence_buffer_with_defaults_has_capacity_1024() {
         let buf = EvidenceBuffer::with_defaults();
-        assert_eq!(buf.capacity(), 1024);
+        assert_eq!(buf.capacity(), DEFAULT_EVIDENCE_BUFFER_CAPACITY);
         assert!(buf.is_empty());
         assert_eq!(buf.len(), 0);
+    }
+
+    #[test]
+    fn evidence_buffer_default_has_capacity_1024() {
+        let buf = EvidenceBuffer::default();
+        assert_eq!(buf.capacity(), DEFAULT_EVIDENCE_BUFFER_CAPACITY);
+        assert!(buf.is_empty());
     }
 
     #[test]

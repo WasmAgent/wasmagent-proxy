@@ -2,8 +2,12 @@
 members = [
     "crates/proxy-wasm-evidence",
     "crates/aep-core",
+    "benchmarks",
 ]
 resolver = "2"
+
+[workspace.dependencies]
+criterion = { version = "0.8", features = ["html_reports"] }
 
 [workspace.package]
 version      = "0.1.0"
