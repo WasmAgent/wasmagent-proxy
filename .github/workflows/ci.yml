@@ -25,6 +25,24 @@ jobs:
       - run: cargo clippy --workspace -- -D warnings
       - run: cargo test -p aep-core
 
+  schema-conformance:
+    name: AEP schema conformance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Emit sample AEP records
+        run: cargo run -p aep-core --example emit_aep_samples -- target/aep-samples
+      - name: Fetch canonical schema (pinned @wasmagent/protocol)
+        run: ci/fetch_aep_schema.sh target/schema
+      - name: Validate samples against canonical aep-record schema
+        run: |
+          python3 -m pip install --quiet jsonschema
+          python3 ci/validate_aep_records.py \
+            --schema target/schema/aep-record.schema.json \
+            --samples-dir target/aep-samples
+
   wasm-build:
     name: Wasm build
     runs-on: ubuntu-latest

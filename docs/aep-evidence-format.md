@@ -2,26 +2,24 @@
 
 ## What an AEP record looks like
 
-The top-level evidence structure produced by wasmagent-proxy is `AepRecord`:
+The top-level evidence structure produced by wasmagent-proxy is `AepRecord`.
+Optional fields are **omitted** when absent (never serialized as `null`), so
+every emitted record validates against the canonical schema (see
+[Schema conformance](#schema-conformance)):
 
 ```json
 {
   "schema_version": "aep/v0.1",
   "run_id": "run-abc123",
   "trace_id": "abc123def456",
-  "session_id": null,
   "actions": [
     {
       "action_id": "ctx-42",
       "tool_name": "POST /api/payments",
       "state_changing": true,
-      "precondition_digest": null,
-      "result_digest": null,
       "timestamp_ms": 1700000000000,
-      "parent_action_id": null,
-      "causal_chain_id": null,
       "recording_mode": "full",
-      "capability_decision": null
+      "mcp_header_risk": "credential_leak"
     }
   ],
   "created_at_ms": 1700000000000,
@@ -37,13 +35,13 @@ The top-level evidence structure produced by wasmagent-proxy is `AepRecord`:
 
 | Field | Type | Description |
 |---|---|---|
-| `schema_version` | `string` | Schema identifier for format compatibility (`"aep/v0.1"`) |
+| `schema_version` | `string` | Schema identifier for format compatibility (`"aep/v0.1"` — within the canonical enum `aep/v0.1`–`aep/v0.3`) |
 | `run_id` | `string` | Unique identifier for the agent run/session |
-| `trace_id` | `string \| null` | Distributed trace ID extracted from `x-b3-traceid` header |
-| `session_id` | `string \| null` | Optional session identifier for multi-turn conversations |
+| `trace_id` | `string` (omitted when absent) | Distributed trace ID extracted from `x-b3-traceid` header |
+| `session_id` | `string` (omitted when absent) | Optional session identifier for multi-turn conversations |
 | `actions` | `array<ActionEvidence>` | List of recorded actions in this request (see below) |
 | `created_at_ms` | `u64` | Unix timestamp in milliseconds when the record was created |
-| `signature` | `AepSignature \| null` | Ed25519 signature envelope (null if signing key not configured) |
+| `signature` | `AepSignature` (omitted when absent) | Ed25519 signature envelope (omitted if signing key not configured) |
 
 ### ActionEvidence fields
 
@@ -52,13 +50,35 @@ The top-level evidence structure produced by wasmagent-proxy is `AepRecord`:
 | `action_id` | `string` | Unique identifier for this action (e.g., `"ctx-42"` derived from Proxy-Wasm context ID) |
 | `tool_name` | `string` | Human-readable label — `"<METHOD> <path>"` (e.g., `"POST /api/payments"`) |
 | `state_changing` | `bool` | `true` if the action modifies external state |
-| `precondition_digest` | `string \| null` | Hash of pre-action state (for `delta`/`full` modes) |
-| `result_digest` | `string \| null` | Hash of post-action state (for `full` mode) |
+| `precondition_digest` | `string` (omitted when absent) | Hash of pre-action state (for `delta`/`full` modes) |
+| `result_digest` | `string` (omitted when absent) | Hash of post-action state (for `full` mode) |
 | `timestamp_ms` | `u64` | Unix timestamp in milliseconds |
-| `parent_action_id` | `string \| null` | ID of the parent action in a causal chain |
-| `causal_chain_id` | `string \| null` | Groups related actions into a causal chain |
+| `parent_action_id` | `string` (omitted when absent) | ID of the parent action in a causal chain |
+| `causal_chain_id` | `string` (omitted when absent) | Groups related actions into a causal chain |
 | `recording_mode` | `string` | One of `"validation"`, `"delta"`, `"full"` |
-| `capability_decision` | `CapabilityDecision \| null` | Optional capability policy decision |
+| `capability_decision` | `CapabilityDecision` (omitted when absent) | Optional capability policy decision |
+| `mcp_header_risk` | `string` (omitted when absent) | MCP 2026-07-28 header-leak risk: `"credential_leak"`, `"high_entropy_value"`, or `"pii_leak"` |
+
+## Schema conformance
+
+The AEP record schema has **one canonical source**:
+[`WasmAgent/wasmagent-protocol`](https://github.com/WasmAgent/wasmagent-protocol),
+published as `@wasmagent/protocol` (npm) / `wasmagent-protocol` (PyPI). The
+schema JSON is never vendored, inlined, or hand-copied into this repo.
+
+- **Emitted `schema_version`**: `aep/v0.1` (constant `aep_core::AEP_SCHEMA_VERSION`),
+  within the canonical schema's enum (`aep/v0.1`, `aep/v0.2`, `aep/v0.3`).
+- **CI check**: the `AEP schema conformance` job emits representative records
+  (`cargo run -p aep-core --example emit_aep_samples`), fetches the canonical
+  `aep-record` schema from the npm release pinned by exact version + sha256
+  (`ci/fetch_aep_schema.sh`), and validates every sample against it
+  (`ci/validate_aep_records.py`, JSON Schema draft 2020-12).
+- **Serialization rule**: optional Rust fields serialize as *omitted*, not
+  `null`, because the canonical schema types them as `string`/`object` — a
+  JSON `null` would fail validation.
+- **Need a schema change?** Open it against `wasmagent-protocol` following its
+  [CONTRACT-CHANGE-PROCESS](https://github.com/WasmAgent/wasmagent-protocol/blob/main/docs/CONTRACT-CHANGE-PROCESS.md);
+  do not fork or relax the schema locally.
 
 ## Side-effect classification rules
 

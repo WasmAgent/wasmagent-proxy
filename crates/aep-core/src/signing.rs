@@ -65,7 +65,7 @@ mod tests {
     /// Helper: build a minimal `AepRecord` suitable for signing tests.
     fn test_record() -> AepRecord {
         AepRecord {
-            schema_version: "aep/0.1".into(),
+            schema_version: crate::evidence::AEP_SCHEMA_VERSION.into(),
             run_id: "test-run-42".into(),
             trace_id: Some("trace-abc".into()),
             session_id: None,
