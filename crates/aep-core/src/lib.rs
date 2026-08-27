@@ -4,7 +4,7 @@ pub mod prov;
 pub mod recording;
 pub mod signing;
 
-pub use evidence::{ActionEvidence, AepRecord, CapabilityDecision};
+pub use evidence::{ActionEvidence, AepRecord, CapabilityDecision, AEP_SCHEMA_VERSION};
 pub use mcp_headers::{classify_mcp_headers, McpHeaderRisk};
 pub use prov::{ProvActivity, ProvAgent, ProvEntity, ProvGraph};
 pub use recording::{
