@@ -27,17 +27,19 @@ pub fn sign_record(record: &mut AepRecord, key: &DalekSigningKey, key_id: &str) 
     });
 }
 
-pub fn verify_record(record: &AepRecord, verifying_key: &VerifyingKey) -> Result<(), VerificationError> {
+pub fn verify_record(
+    record: &AepRecord,
+    verifying_key: &VerifyingKey,
+) -> Result<(), VerificationError> {
     let sig_meta = record
         .signature
         .as_ref()
         .ok_or(VerificationError::MissingSignature)?;
     let sig_bytes =
         hex::decode(&sig_meta.sig).map_err(|_| VerificationError::MalformedSignatureHex)?;
-    let sig_array: [u8; ed25519_dalek::Signature::BYTE_SIZE] =
-        sig_bytes
-            .try_into()
-            .map_err(|_| VerificationError::InvalidSignatureLength)?;
+    let sig_array: [u8; ed25519_dalek::Signature::BYTE_SIZE] = sig_bytes
+        .try_into()
+        .map_err(|_| VerificationError::InvalidSignatureLength)?;
     let sig = ed25519_dalek::Signature::from_bytes(&sig_array);
     let mut unsigned = record.clone();
     unsigned.signature = None;
