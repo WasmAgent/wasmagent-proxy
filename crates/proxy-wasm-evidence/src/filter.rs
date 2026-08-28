@@ -2,11 +2,13 @@ use proxy_wasm::traits::*;
 use proxy_wasm::types::*;
 
 use crate::config::PluginConfig;
-use crate::recorder::{build_evidence, infer_side_effect_class_with_mcp, EvidenceBuffer};
+use crate::recorder::{
+    build_evidence, infer_side_effect_class_with_mcp, unix_millis, EvidenceBuffer,
+};
 use aep_core::classify_mcp_headers;
 use aep_core::recording::RiskContext;
 use aep_core::RecordingMode;
-use proxy_wasm::hostcalls::{define_metric, increment_metric};
+use proxy_wasm::hostcalls::{define_metric, get_current_time, increment_metric};
 use proxy_wasm::types::MetricType;
 
 /// Envoy stat name prefix for AEP evidence counters.
@@ -15,8 +17,40 @@ use proxy_wasm::types::MetricType;
 /// extraction rules.
 const METRIC_BASE: &str = "aep.evidence.recorded_total";
 
+/// Proxy-Wasm counter IDs for `aep_evidence_recorded_total{mode=...}`, defined
+/// once per VM in [`EvidenceRoot::on_configure`] (a hostcall per HTTP context
+/// would otherwise run on every request). `0` means the host refused the
+/// definition; incrementing metric 0 is a harmless no-op error.
+#[derive(Clone, Copy, Default)]
+struct EvidenceMetrics {
+    validation: u32,
+    delta: u32,
+    full: u32,
+}
+
+impl EvidenceMetrics {
+    fn define() -> Self {
+        Self {
+            validation: define_metric(MetricType::Counter, &format!("{}.validation", METRIC_BASE))
+                .unwrap_or(0),
+            delta: define_metric(MetricType::Counter, &format!("{}.delta", METRIC_BASE))
+                .unwrap_or(0),
+            full: define_metric(MetricType::Counter, &format!("{}.full", METRIC_BASE)).unwrap_or(0),
+        }
+    }
+
+    fn id_for(&self, mode: &RecordingMode) -> u32 {
+        match mode {
+            RecordingMode::Validation => self.validation,
+            RecordingMode::Delta => self.delta,
+            RecordingMode::Full => self.full,
+        }
+    }
+}
+
 pub struct EvidenceRoot {
     config: PluginConfig,
+    metrics: EvidenceMetrics,
 }
 
 impl EvidenceRoot {
@@ -29,6 +63,7 @@ impl Default for EvidenceRoot {
     fn default() -> Self {
         Self {
             config: PluginConfig::default(),
+            metrics: EvidenceMetrics::default(),
         }
     }
 }
@@ -37,6 +72,9 @@ impl Context for EvidenceRoot {}
 
 impl RootContext for EvidenceRoot {
     fn on_configure(&mut self, plugin_configuration_size: usize) -> bool {
+        // Define counters once per VM, before any HTTP context exists.
+        self.metrics = EvidenceMetrics::define();
+
         if plugin_configuration_size == 0 {
             self.config = PluginConfig::default();
             return true;
@@ -47,25 +85,26 @@ impl RootContext for EvidenceRoot {
         };
 
         match serde_json::from_slice::<PluginConfig>(&config_bytes) {
-            Ok(config) => {
-                if config.max_evidence_buffer == 0 {
-                    log::error!("proxy-wasm evidence max_evidence_buffer must be greater than 0");
+            Ok(config) => match config.validate() {
+                Ok(()) => self.config = config,
+                Err(reason) => {
+                    log::error!("invalid proxy-wasm evidence config: {reason}");
                     return false;
                 }
-                self.config = config;
-                true
-            }
+            },
             Err(err) => {
                 log::error!("failed to parse proxy-wasm evidence config JSON: {err}");
-                false
+                return false;
             }
         }
+        true
     }
 
     fn create_http_context(&self, context_id: u32) -> Option<Box<dyn HttpContext>> {
         Some(Box::new(EvidenceFilter::new(
             context_id,
             self.config.clone(),
+            self.metrics,
         )))
     }
 }
@@ -83,15 +122,15 @@ pub struct EvidenceFilter {
     mcp_method: Option<String>,
     /// MCP-Name header value (MCP 2026-07-28+). Checked for PII/credential leakage.
     mcp_name: Option<String>,
-    /// Prometheus counter IDs for `aep_evidence_recorded_total{mode=...}`.
-    /// Defined via `proxy_wasm::hostcalls::define_metric` on construction.
-    metric_validation: u32,
-    metric_delta: u32,
-    metric_full: u32,
+    /// Counter IDs defined once by the root context — see [`EvidenceMetrics`].
+    metrics: EvidenceMetrics,
 }
 
 impl EvidenceFilter {
-    pub fn new(context_id: u32, config: PluginConfig) -> Self {
+    /// Contexts are only created by [`EvidenceRoot::create_http_context`] in
+    /// this module; keeping `new` private also avoids exposing the
+    /// module-private [`EvidenceMetrics`] through a public signature.
+    fn new(context_id: u32, config: PluginConfig, metrics: EvidenceMetrics) -> Self {
         let evidence_buffer = EvidenceBuffer::new(config.max_evidence_buffer);
         Self {
             context_id,
@@ -103,16 +142,15 @@ impl EvidenceFilter {
             agent_id: None,
             mcp_method: None,
             mcp_name: None,
-            metric_validation: define_metric(
-                MetricType::Counter,
-                &format!("{}.validation", METRIC_BASE),
-            )
-            .unwrap_or(0),
-            metric_delta: define_metric(MetricType::Counter, &format!("{}.delta", METRIC_BASE))
-                .unwrap_or(0),
-            metric_full: define_metric(MetricType::Counter, &format!("{}.full", METRIC_BASE))
-                .unwrap_or(0),
+            metrics,
         }
+    }
+
+    /// Unix-milliseconds timestamp for evidence records, sourced from the
+    /// host so the Wasm module needs no direct wall-clock access. Falls back
+    /// to 0 if the host call fails.
+    fn current_time_ms(&self) -> u64 {
+        get_current_time().map(unix_millis).unwrap_or(0)
     }
 }
 
@@ -151,7 +189,14 @@ impl HttpContext for EvidenceFilter {
         let tool_name = format!("{} {}", self.method, self.path);
         let mcp_header_risk =
             classify_mcp_headers(self.mcp_method.as_deref(), self.mcp_name.as_deref());
-        let evidence = build_evidence(action_id, tool_name, &risk_ctx, 0, None, mcp_header_risk);
+        let evidence = build_evidence(
+            action_id,
+            tool_name,
+            &risk_ctx,
+            self.current_time_ms(),
+            None,
+            mcp_header_risk,
+        );
         // Emit the canonical snake_case form (matching the `recording_mode` field
         // serialized into AEP records) rather than the Debug-format PascalCase.
         self.set_http_response_header(
@@ -159,12 +204,7 @@ impl HttpContext for EvidenceFilter {
             Some(evidence.recording_mode.as_str()),
         );
         // Increment the appropriate Prometheus counter for this recording mode.
-        let metric_id = match evidence.recording_mode {
-            RecordingMode::Validation => self.metric_validation,
-            RecordingMode::Delta => self.metric_delta,
-            RecordingMode::Full => self.metric_full,
-        };
-        let _ = increment_metric(metric_id, 1);
+        let _ = increment_metric(self.metrics.id_for(&evidence.recording_mode), 1);
         if let Some(ref risk_str) = evidence.mcp_header_risk {
             self.set_http_response_header("x-aep-mcp-header-risk", Some(risk_str));
         }

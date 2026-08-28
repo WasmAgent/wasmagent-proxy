@@ -140,6 +140,52 @@ mod tests {
     }
 
     #[test]
+    fn consent_anomaly_always_full() {
+        let mut c = ctx(SideEffectClass::Read);
+        c.has_consent_anomaly = true;
+        assert_eq!(compile_recording_policy(&c).mode, RecordingMode::Full);
+    }
+
+    #[test]
+    fn taint_with_read_class_stays_validation() {
+        // Tainted input only escalates state-changing calls; a Read call with
+        // a taint chain still lands on the cheapest mode.
+        let mut c = ctx(SideEffectClass::Read);
+        c.taint_chain_length = 3;
+        let policy = compile_recording_policy(&c);
+        assert_eq!(policy.mode, RecordingMode::Validation);
+        assert_eq!(policy.reason, "read-only, no anomaly");
+    }
+
+    #[test]
+    fn taint_with_mutate_local_escalates_to_full() {
+        let mut c = ctx(SideEffectClass::MutateLocal);
+        c.taint_chain_length = 1;
+        assert_eq!(compile_recording_policy(&c).mode, RecordingMode::Full);
+    }
+
+    #[test]
+    fn unknown_class_yields_full() {
+        assert_eq!(
+            compile_recording_policy(&ctx(SideEffectClass::Unknown)).mode,
+            RecordingMode::Full
+        );
+    }
+
+    #[test]
+    fn risk_priority_order_vetted_beats_others() {
+        // When multiple signals fire, the first matching rule's reason wins.
+        let mut c = ctx(SideEffectClass::MutateExternal);
+        c.was_vetted = true;
+        c.has_consent_anomaly = true;
+        c.taint_chain_length = 2;
+        assert_eq!(
+            compile_recording_policy(&c).reason,
+            "tool flagged by vetting"
+        );
+    }
+
+    #[test]
     fn recording_mode_as_str_matches_serde() {
         for mode in [
             RecordingMode::Validation,
