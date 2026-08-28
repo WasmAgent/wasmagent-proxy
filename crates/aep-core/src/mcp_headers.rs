@@ -35,18 +35,27 @@ pub use crate::evidence::McpHeaderRisk;
 /// //                                                      ^^^
 /// //                                         Option<McpHeaderRisk> flows through
 /// ```
+/// ASCII-case-insensitive prefix check without allocation. Allocating
+/// `to_lowercase()` copies here runs per header value on the gateway's
+/// per-request hot path; `eq_ignore_ascii_case` on byte slices does not.
+fn starts_with_ignore_case(value: &str, prefix: &str) -> bool {
+    let bytes = value.as_bytes();
+    prefix.len() <= bytes.len() && bytes[..prefix.len()].eq_ignore_ascii_case(prefix.as_bytes())
+}
+
 pub fn classify_mcp_headers(
     mcp_method: Option<&str>,
     mcp_name: Option<&str>,
 ) -> Option<McpHeaderRisk> {
+    // Prefixes are lowercase ASCII; `starts_with_ignore_case` compares bytes
+    // ASCII-case-insensitively, so no per-check lowercasing is needed.
     const CREDENTIAL_PREFIXES: &[&str] = &["ghp_", "ghb_", "sk-", "Bearer ", "token ", "api_"];
     const MIN_HIGH_ENTROPY_LEN: usize = 32;
 
     for val in [mcp_method, mcp_name].into_iter().flatten() {
         // Credential prefix detection (case-insensitive)
-        let lower = val.to_lowercase();
         for prefix in CREDENTIAL_PREFIXES {
-            if lower.starts_with(&prefix.to_lowercase() as &str) {
+            if starts_with_ignore_case(val, prefix) {
                 return Some(McpHeaderRisk::CredentialLeak);
             }
         }
@@ -116,6 +125,33 @@ mod tests {
         );
         assert_eq!(
             classify_mcp_headers(Some("SK-abcdefghij"), None),
+            Some(McpHeaderRisk::CredentialLeak)
+        );
+        assert_eq!(
+            classify_mcp_headers(Some("TOKEN abc"), None),
+            Some(McpHeaderRisk::CredentialLeak)
+        );
+    }
+
+    #[test]
+    fn classify_mcp_headers_high_entropy_boundary_is_thirty_two_chars() {
+        let short = "a".repeat(31);
+        assert_eq!(classify_mcp_headers(None, Some(&short)), None);
+
+        let exact = "a".repeat(32);
+        assert_eq!(
+            classify_mcp_headers(None, Some(&exact)),
+            Some(McpHeaderRisk::HighEntropyValue)
+        );
+    }
+
+    #[test]
+    fn classify_mcp_headers_credential_prefix_wins_over_other_risks() {
+        // A 40-char value with a credential prefix classifies as credential
+        // leak (prefix check runs before the high-entropy check).
+        let val = format!("sk-{}", "a".repeat(40));
+        assert_eq!(
+            classify_mcp_headers(None, Some(&val)),
             Some(McpHeaderRisk::CredentialLeak)
         );
     }

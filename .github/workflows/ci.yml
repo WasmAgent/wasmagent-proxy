@@ -23,7 +23,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace -- -D warnings
-      - run: cargo test -p aep-core
+      # --lib covers unit tests in every workspace crate (aep-core AND
+      # proxy-wasm-evidence); `-p aep-core` alone skipped the filter crate.
+      - run: cargo test --workspace --lib
 
   schema-conformance:
     name: AEP schema conformance

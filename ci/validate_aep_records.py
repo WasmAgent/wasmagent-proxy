@@ -32,7 +32,12 @@ def main() -> None:
     failures = 0
     for sample in samples:
         record = json.loads(sample.read_text())
-        errors = sorted(validator.iter_errors(record), key=lambda e: list(e.absolute_path))
+        errors = sorted(
+            validator.iter_errors(record),
+            # str() keeps the key comparable when JSON-Schema paths mix array
+            # indices (int) and property names (str).
+            key=lambda e: [str(p) for p in e.absolute_path],
+        )
         if errors:
             failures += 1
             print(f"FAIL {sample.name}")

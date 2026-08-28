@@ -11,7 +11,8 @@
 //! 8. read_default        – Read, no anomalies        → Validation
 
 use aep_core::recording::{compile_recording_policy, RiskContext, SideEffectClass};
-use criterion::{black_box, criterion_group, Criterion};
+use criterion::{criterion_group, Criterion};
+use std::hint::black_box;
 use std::time::Instant;
 
 /// Helper to build a default (Read, clean) RiskContext.

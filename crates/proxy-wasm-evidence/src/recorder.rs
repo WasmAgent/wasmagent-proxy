@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use aep_core::{
     evidence::ActionEvidence,
@@ -127,6 +128,15 @@ pub fn infer_side_effect_class_with_mcp(
     }
 }
 
+/// Convert a wall-clock time to Unix milliseconds. Times before the epoch map
+/// to 0. Split out from the Proxy-Wasm hostcall so the conversion is unit
+/// testable on native targets ([`filter`] is compiled only for wasm32).
+pub fn unix_millis(time: SystemTime) -> u64 {
+    time.duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
 pub fn build_evidence(
     action_id: String,
     tool_name: String,
@@ -155,6 +165,19 @@ pub fn build_evidence(
 mod tests {
     use super::*;
     use aep_core::recording::RecordingMode;
+    use std::time::Duration;
+
+    #[test]
+    fn unix_millis_converts_epoch_plus_duration() {
+        let t = UNIX_EPOCH + Duration::from_millis(1_700_000_000_123);
+        assert_eq!(unix_millis(t), 1_700_000_000_123);
+    }
+
+    #[test]
+    fn unix_millis_maps_pre_epoch_to_zero() {
+        assert_eq!(unix_millis(UNIX_EPOCH - Duration::from_secs(1)), 0);
+        assert_eq!(unix_millis(UNIX_EPOCH), 0);
+    }
 
     fn risk(side_effect_class: SideEffectClass) -> RiskContext {
         RiskContext {

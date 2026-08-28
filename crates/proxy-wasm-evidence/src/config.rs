@@ -22,6 +22,32 @@ pub struct PluginConfig {
 
 pub type Config = PluginConfig;
 
+impl PluginConfig {
+    /// Validate cross-field invariants that serde's type checks cannot express.
+    ///
+    /// Called from the root context's `on_configure` so a misconfigured plugin
+    /// fails to load instead of silently degrading at request time. For an
+    /// evidence-recording filter, a malformed signing key must be fatal: it
+    /// would otherwise produce unsigned (i.e. unauditable) evidence with no
+    /// signal to the operator.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.max_evidence_buffer == 0 {
+            return Err("max_evidence_buffer must be greater than 0".into());
+        }
+        if let Some(key_hex) = &self.signing_key_hex {
+            let decoded = hex::decode(key_hex)
+                .map_err(|err| format!("signing_key_hex is not valid hex: {err}"))?;
+            if decoded.len() != 32 {
+                return Err(format!(
+                    "signing_key_hex must decode to 32 bytes (Ed25519 seed), got {}",
+                    decoded.len()
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
 impl Default for PluginConfig {
     fn default() -> Self {
         Self {
@@ -75,5 +101,43 @@ mod tests {
         .expect("deserialize plugin config");
 
         assert_eq!(config.max_evidence_buffer, 1024);
+    }
+
+    #[test]
+    fn validate_accepts_default_config() {
+        Config::default()
+            .validate()
+            .expect("default config is valid");
+    }
+
+    #[test]
+    fn validate_rejects_zero_evidence_buffer() {
+        let mut config = Config::default();
+        config.max_evidence_buffer = 0;
+        let err = config.validate().expect_err("zero buffer must be rejected");
+        assert!(err.contains("max_evidence_buffer"), "got: {err}");
+    }
+
+    #[test]
+    fn validate_accepts_32_byte_hex_signing_key() {
+        let mut config = Config::default();
+        config.signing_key_hex = Some("00".repeat(32));
+        config.validate().expect("32-byte hex key is valid");
+    }
+
+    #[test]
+    fn validate_rejects_non_hex_signing_key() {
+        let mut config = Config::default();
+        config.signing_key_hex = Some("<inject-at-deploy-time>".into());
+        let err = config.validate().expect_err("non-hex key must be rejected");
+        assert!(err.contains("not valid hex"), "got: {err}");
+    }
+
+    #[test]
+    fn validate_rejects_wrong_length_signing_key() {
+        let mut config = Config::default();
+        config.signing_key_hex = Some("00".repeat(31));
+        let err = config.validate().expect_err("31-byte key must be rejected");
+        assert!(err.contains("32 bytes"), "got: {err}");
     }
 }
