@@ -9,8 +9,8 @@
 # Usage: ci/fetch_aep_schema.sh [out-dir]
 set -euo pipefail
 
-VERSION="0.1.7"
-SHA256="d29773ee3a5dbb5037ddb8831893236be8318fd53827bf55beaa051063f21b81"
+VERSION="0.1.9"
+SHA256="e06e494c0f09cb051d439aa41c3ac1594c97c2dcb60fbc0be3f9a40e891077a9"
 
 OUT_DIR="${1:-target/schema}"
 mkdir -p "$OUT_DIR"
