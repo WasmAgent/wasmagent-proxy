@@ -158,6 +158,7 @@ pub fn build_evidence(
         recording_mode: policy.mode,
         capability_decision: None,
         mcp_header_risk: mcp_header_risk.map(|r| r.as_str().to_string()),
+        side_effect_class: Some(risk_ctx.side_effect_class.canonical_str().to_string()),
     }
 }
 
@@ -340,6 +341,7 @@ mod tests {
             recording_mode: RecordingMode::Validation,
             capability_decision: None,
             mcp_header_risk: None,
+            side_effect_class: None,
         }
     }
 

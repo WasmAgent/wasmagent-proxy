@@ -5,9 +5,11 @@ use serde::{Deserialize, Serialize};
 ///
 /// Must stay within the `schema_version` enum declared by the canonical
 /// `aep-record` schema owned by `WasmAgent/wasmagent-protocol`
-/// (`aep/v0.1` … `aep/v0.3`); schema changes go through that repo's
+/// (`aep/v0.1` … `aep/v0.5`); schema changes go through that repo's
 /// CONTRACT-CHANGE-PROCESS, never through a local fork of the schema.
-pub const AEP_SCHEMA_VERSION: &str = "aep/v0.1";
+/// v0.3/v0.5 waves are additive-only, so records emitted at v0.5 with only
+/// the fields this gateway knows remain valid for every consumer.
+pub const AEP_SCHEMA_VERSION: &str = "aep/v0.5";
 
 /// Risk level detected in MCP-specific headers (MCP 2026-07-28+).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -74,6 +76,13 @@ pub struct ActionEvidence {
     /// Producers convert from the enum via [`McpHeaderRisk::as_str`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mcp_header_risk: Option<String>,
+    /// v0.3: side-effect classification for this action, in the canonical
+    /// hyphenated vocabulary (`read`, `mutate-local`, `mutate-external`,
+    /// `network-egress`, `unknown`). Derived at the gateway from the HTTP
+    /// method / MCP operation. Stored as a plain `String` (see
+    /// [`SideEffectClass::canonical_str`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub side_effect_class: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,6 +93,33 @@ pub struct AepRecord {
     pub trace_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
+    /// v0.3+: end-user principal the run acted on behalf of.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
+    /// v0.5: principal that granted/approved the authority (may differ from user_id).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authorized_by: Option<String>,
+    /// v0.5: how the authority was obtained (canonical snake_case enum).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authority_origin: Option<String>,
+    /// v0.5: how the identity behind the backing key was established.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub identity_source: Option<String>,
+    /// v0.5: what backs the human attribution.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attribution_backing: Option<String>,
+    /// v0.5: weakest backing present across the run — MUST NOT round up.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_attribution_backing_floor: Option<String>,
+    /// v0.5: every backing grade observed across the run.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_attribution_backing_observed: Option<Vec<String>>,
+    /// v0.3: highest side-effect class observed across the run (canonical hyphenated).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_side_effect_class_max: Option<String>,
+    /// v0.3: retention depth of captured evidence for this run.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recording_mode: Option<String>,
     pub actions: Vec<ActionEvidence>,
     pub created_at_ms: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -104,9 +140,9 @@ mod tests {
     #[test]
     fn schema_version_constant_is_in_canonical_enum() {
         // The canonical aep-record schema (wasmagent-protocol) declares
-        // schema_version as an enum; "aep/v0.1" is its first entry. The value
-        // must carry the "v" — "aep/0.1" fails schema validation.
-        assert_eq!(AEP_SCHEMA_VERSION, "aep/v0.1");
+        // schema_version as an enum; "aep/v0.5" is its latest entry. The value
+        // must carry the "v" — "aep/0.5" fails schema validation.
+        assert_eq!(AEP_SCHEMA_VERSION, "aep/v0.5");
     }
 
     #[test]
@@ -119,6 +155,15 @@ mod tests {
             run_id: "run-1".into(),
             trace_id: None,
             session_id: None,
+            user_id: None,
+            authorized_by: None,
+            authority_origin: None,
+            identity_source: None,
+            attribution_backing: None,
+            run_attribution_backing_floor: None,
+            run_attribution_backing_observed: None,
+            run_side_effect_class_max: None,
+            recording_mode: None,
             actions: vec![ActionEvidence {
                 action_id: "act-1".into(),
                 tool_name: "GET /x".into(),
@@ -131,6 +176,7 @@ mod tests {
                 recording_mode: RecordingMode::Validation,
                 capability_decision: None,
                 mcp_header_risk: None,
+                side_effect_class: None,
             }],
             created_at_ms: 1_700_000_000_000,
             signature: None,
@@ -147,6 +193,12 @@ mod tests {
             "\"causal_chain_id\"",
             "\"capability_decision\"",
             "\"mcp_header_risk\"",
+            "\"side_effect_class\"",
+            "\"user_id\"",
+            "\"authorized_by\"",
+            "\"authority_origin\"",
+            "\"attribution_backing\"",
+            "\"run_attribution_backing_floor\"",
             "null",
         ] {
             assert!(!json.contains(absent), "expected no {absent} in: {json}");
@@ -160,6 +212,18 @@ mod tests {
             run_id: "run-2".into(),
             trace_id: Some("trace-xyz".into()),
             session_id: None,
+            user_id: Some("user-dana@acme.example".into()),
+            authorized_by: None,
+            authority_origin: Some("subject_consented".into()),
+            identity_source: Some("organization_attested".into()),
+            attribution_backing: Some("principal_key_signed".into()),
+            run_attribution_backing_floor: Some("operator_asserted".into()),
+            run_attribution_backing_observed: Some(vec![
+                "operator_asserted".into(),
+                "principal_key_signed".into(),
+            ]),
+            run_side_effect_class_max: Some("mutate-external".into()),
+            recording_mode: Some("full".into()),
             actions: vec![ActionEvidence {
                 action_id: "act-2".into(),
                 tool_name: "POST /mcp".into(),
@@ -172,6 +236,7 @@ mod tests {
                 recording_mode: RecordingMode::Full,
                 capability_decision: None,
                 mcp_header_risk: Some(McpHeaderRisk::PiiLeak.as_str().into()),
+                side_effect_class: Some("network-egress".into()),
             }],
             created_at_ms: 1_700_000_000_001,
             signature: None,
@@ -181,6 +246,19 @@ mod tests {
         assert!(json.contains("\"trace_id\":\"trace-xyz\""), "got: {json}");
         assert!(
             json.contains("\"causal_chain_id\":\"chain-1\""),
+            "got: {json}"
+        );
+        // v0.5 attribution grading serializes with canonical snake_case values.
+        assert!(
+            json.contains("\"authority_origin\":\"subject_consented\""),
+            "got: {json}"
+        );
+        assert!(
+            json.contains("\"run_attribution_backing_floor\":\"operator_asserted\""),
+            "got: {json}"
+        );
+        assert!(
+            json.contains("\"run_attribution_backing_observed\":[\"operator_asserted\",\"principal_key_signed\"]"),
             "got: {json}"
         );
 
@@ -220,6 +298,7 @@ mod tests {
             recording_mode: RecordingMode::Full,
             capability_decision: None,
             mcp_header_risk: Some("credential_leak".into()),
+            side_effect_class: Some("mutate-external".into()),
         };
 
         let value = serde_json::to_value(evidence).expect("serialize ActionEvidence");
@@ -246,6 +325,7 @@ mod tests {
             recording_mode: RecordingMode::Validation,
             capability_decision: None,
             mcp_header_risk: Some(McpHeaderRisk::HighEntropyValue.as_str().into()),
+            side_effect_class: Some("network-egress".into()),
         };
 
         let json = serde_json::to_string(&original).expect("serialize ActionEvidence");

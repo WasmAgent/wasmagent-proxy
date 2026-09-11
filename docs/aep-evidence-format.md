@@ -9,7 +9,7 @@ every emitted record validates against the canonical schema (see
 
 ```json
 {
-  "schema_version": "aep/v0.1",
+  "schema_version": "aep/v0.5",
   "run_id": "run-abc123",
   "trace_id": "abc123def456",
   "actions": [
@@ -35,7 +35,7 @@ every emitted record validates against the canonical schema (see
 
 | Field | Type | Description |
 |---|---|---|
-| `schema_version` | `string` | Schema identifier for format compatibility (`"aep/v0.1"` — within the canonical enum `aep/v0.1`–`aep/v0.5`) |
+| `schema_version` | `string` | Schema identifier for format compatibility (`"aep/v0.5"` — within the canonical enum `aep/v0.1`–`aep/v0.5`) |
 | `run_id` | `string` | Unique identifier for the agent run/session |
 | `trace_id` | `string` (omitted when absent) | Distributed trace ID extracted from `x-b3-traceid` header |
 | `session_id` | `string` (omitted when absent) | Optional session identifier for multi-turn conversations |
@@ -66,8 +66,15 @@ The AEP record schema has **one canonical source**:
 published as `@wasmagent/protocol` (npm) / `wasmagent-protocol` (PyPI). The
 schema JSON is never vendored, inlined, or hand-copied into this repo.
 
-- **Emitted `schema_version`**: `aep/v0.1` (constant `aep_core::AEP_SCHEMA_VERSION`),
+- **Emitted `schema_version`**: `aep/v0.5` (constant `aep_core::AEP_SCHEMA_VERSION`),
   within the canonical schema's enum (`aep/v0.1`–`aep/v0.5`; additive fields only, so v0.1 records stay valid).
+- **v0.5 attribution fields**: the record struct carries `user_id`, `authorized_by`,
+  `authority_origin`, `identity_source`, `attribution_backing`,
+  `run_attribution_backing_floor` and `run_attribution_backing_observed` as optional
+  fields (canonical snake_case values). The gateway populates the ones it can
+  observe (e.g. an authenticated principal header); absent fields are omitted,
+  never null. Per-action `side_effect_class` uses the canonical hyphenated
+  vocabulary (`read`, `mutate-local`, `mutate-external`, `network-egress`, `unknown`).
 - **CI check**: the `AEP schema conformance` job emits representative records
   (`cargo run -p aep-core --example emit_aep_samples`), fetches the canonical
   `aep-record` schema from the npm release pinned by exact version + sha256
