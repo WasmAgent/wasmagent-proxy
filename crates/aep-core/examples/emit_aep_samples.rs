@@ -11,9 +11,8 @@ use std::fs;
 use std::path::Path;
 
 use aep_core::{
-    recording::SideEffectClass,
-    sign_record, ActionEvidence, AepRecord, CapabilityDecision, RecordingMode, SigningKey,
-    AEP_SCHEMA_VERSION,
+    recording::SideEffectClass, sign_record, ActionEvidence, AepRecord, CapabilityDecision,
+    RecordingMode, SigningKey, AEP_SCHEMA_VERSION,
 };
 
 fn minimal_record() -> AepRecord {
