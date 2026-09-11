@@ -174,7 +174,7 @@ pub fn verify_record_dsse(
     if subject_digest != sha256_hex(canonical_json(&unsigned).as_bytes()) {
         return Err("dsse subject digest does not bind the record");
     }
-    if statement.get("predicate").map(|p| p) != Some(&unsigned) {
+    if statement.get("predicate") != Some(&unsigned) {
         return Err("dsse predicate does not match the record");
     }
     Ok(())
