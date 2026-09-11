@@ -33,6 +33,22 @@ pub enum SideEffectClass {
     Unknown,
 }
 
+impl SideEffectClass {
+    /// Canonical aep-record vocabulary for this class: hyphenated forms as
+    /// declared by the `side_effect_class` field in the canonical schema
+    /// (`WasmAgent/wasmagent-protocol`). Note this differs from the serde
+    /// snake_case wire form above — canonical values are hyphenated.
+    pub const fn canonical_str(&self) -> &'static str {
+        match self {
+            SideEffectClass::Read => "read",
+            SideEffectClass::MutateLocal => "mutate-local",
+            SideEffectClass::MutateExternal => "mutate-external",
+            SideEffectClass::NetworkEgress => "network-egress",
+            SideEffectClass::Unknown => "unknown",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RiskContext {
     pub was_vetted: bool,
