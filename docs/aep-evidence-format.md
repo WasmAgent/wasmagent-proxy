@@ -35,7 +35,7 @@ every emitted record validates against the canonical schema (see
 
 | Field | Type | Description |
 |---|---|---|
-| `schema_version` | `string` | Schema identifier for format compatibility (`"aep/v0.1"` — within the canonical enum `aep/v0.1`–`aep/v0.3`) |
+| `schema_version` | `string` | Schema identifier for format compatibility (`"aep/v0.1"` — within the canonical enum `aep/v0.1`–`aep/v0.5`) |
 | `run_id` | `string` | Unique identifier for the agent run/session |
 | `trace_id` | `string` (omitted when absent) | Distributed trace ID extracted from `x-b3-traceid` header |
 | `session_id` | `string` (omitted when absent) | Optional session identifier for multi-turn conversations |
@@ -67,7 +67,7 @@ published as `@wasmagent/protocol` (npm) / `wasmagent-protocol` (PyPI). The
 schema JSON is never vendored, inlined, or hand-copied into this repo.
 
 - **Emitted `schema_version`**: `aep/v0.1` (constant `aep_core::AEP_SCHEMA_VERSION`),
-  within the canonical schema's enum (`aep/v0.1`, `aep/v0.2`, `aep/v0.3`).
+  within the canonical schema's enum (`aep/v0.1`–`aep/v0.5`; additive fields only, so v0.1 records stay valid).
 - **CI check**: the `AEP schema conformance` job emits representative records
   (`cargo run -p aep-core --example emit_aep_samples`), fetches the canonical
   `aep-record` schema from the npm release pinned by exact version + sha256
