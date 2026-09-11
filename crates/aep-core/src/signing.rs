@@ -1,4 +1,5 @@
 use crate::evidence::AepRecord;
+use base64::Engine as _;
 use ed25519_dalek::{Signer, SigningKey as DalekSigningKey, VerifyingKey};
 use sha2::{Digest, Sha256};
 
@@ -9,12 +10,49 @@ pub use ed25519_dalek::SigningKey;
 pub enum VerificationError {
     /// The record has no signature attached.
     MissingSignature,
-    /// The signature hex string could not be decoded.
-    MalformedSignatureHex,
+    /// The signature string could not be decoded (base64 or legacy hex).
+    MalformedSignatureEncoding,
     /// The decoded signature bytes are not the expected length.
     InvalidSignatureLength,
     /// The cryptographic verification failed (wrong key or tampered data).
     SignatureMismatch,
+}
+
+/// Encode an Ed25519 signature the way every verifier in the ecosystem
+/// expects: standard base64. (JS `verifyAEPRecord` and trace-pipeline's
+/// Python verifier both base64-decode `signature.sig`; the gateway used to
+/// emit hex, which made gateway records unverifiable outside Rust.)
+pub fn encode_signature(sig_bytes: &[u8]) -> String {
+    base64::engine::general_purpose::STANDARD.encode(sig_bytes)
+}
+
+/// Decode a signature string. Current producers emit standard base64;
+/// pre-aep/v0.5 gateway releases emitted 128-char lowercase hex — accepted
+/// for backward compatibility with already-published records.
+fn decode_signature(sig: &str) -> Result<Vec<u8>, VerificationError> {
+    let s = sig.trim();
+    let is_legacy_hex = s.len() == 128 && s.chars().all(|c| c.is_ascii_hexdigit());
+    if is_legacy_hex {
+        return hex::decode(s).map_err(|_| VerificationError::MalformedSignatureEncoding);
+    }
+    // Tolerate URL-safe alphabets and missing padding on the base64 path.
+    let normalized: String = s
+        .trim_end_matches('=')
+        .chars()
+        .map(|c| match c {
+            '-' => '+',
+            '_' => '/',
+            other => other,
+        })
+        .collect();
+    let padded = match normalized.len() % 4 {
+        2 => format!("{}==", normalized),
+        3 => format!("{}=", normalized),
+        _ => normalized,
+    };
+    base64::engine::general_purpose::STANDARD
+        .decode(padded.as_bytes())
+        .map_err(|_| VerificationError::MalformedSignatureEncoding)
 }
 
 pub fn sign_record(record: &mut AepRecord, key: &DalekSigningKey, key_id: &str) {
@@ -23,7 +61,7 @@ pub fn sign_record(record: &mut AepRecord, key: &DalekSigningKey, key_id: &str) 
     record.signature = Some(crate::evidence::AepSignature {
         alg: "ed25519".into(),
         key_id: key_id.into(),
-        sig: hex::encode(sig.to_bytes()),
+        sig: encode_signature(&sig.to_bytes()),
     });
 }
 
@@ -35,8 +73,7 @@ pub fn verify_record(
         .signature
         .as_ref()
         .ok_or(VerificationError::MissingSignature)?;
-    let sig_bytes =
-        hex::decode(&sig_meta.sig).map_err(|_| VerificationError::MalformedSignatureHex)?;
+    let sig_bytes = decode_signature(&sig_meta.sig)?;
     let sig_array: [u8; ed25519_dalek::Signature::BYTE_SIZE] = sig_bytes
         .try_into()
         .map_err(|_| VerificationError::InvalidSignatureLength)?;
@@ -69,6 +106,7 @@ mod tests {
             run_id: "test-run-42".into(),
             trace_id: Some("trace-abc".into()),
             session_id: None,
+            dsse_envelope: None,
             user_id: None,
             authorized_by: None,
             authority_origin: None,

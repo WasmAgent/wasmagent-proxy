@@ -47,6 +47,11 @@ pub struct CapabilityDecision {
     pub decision: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason_code: Option<String>,
+    /// v0.3: why a deny occurred (`tool-identity`, `argument`,
+    /// `tainted-input`, `resource-scope`, `missing-delegation`,
+    /// `policy-rule`, `other`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deny_reason_class: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,6 +98,9 @@ pub struct AepRecord {
     pub trace_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
+    /// v0.4: DSSE/in-toto attestation envelope wrapping the record signature.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dsse_envelope: Option<DsseEnvelope>,
     /// v0.3+: end-user principal the run acted on behalf of.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_id: Option<String>,
@@ -133,6 +141,70 @@ pub struct AepSignature {
     pub sig: String,
 }
 
+/// One signature inside a DSSE envelope (field names match the DSSE spec).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DsseSignature {
+    pub keyid: String,
+    pub sig: String,
+}
+
+/// v0.4: DSSE/in-toto attestation envelope wrapping the record signature.
+/// `payload` is base64 of the in-toto Statement JSON. Field names follow the
+/// DSSE spec's camelCase wire form (`payloadType`), matching the canonical
+/// aep-record schema and the JS `DSSEEnvelope` type.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DsseEnvelope {
+    pub payload_type: String,
+    pub payload: String,
+    pub signatures: Vec<DsseSignature>,
+}
+
+/// Roll up the strongest side_effect_class across actions (canonical
+/// hyphenated vocabulary). Mirrors the JS emitter's
+/// run_side_effect_class_max: `unknown` ranks highest (forces review).
+pub fn run_side_effect_class_max(evidence: &[ActionEvidence]) -> Option<String> {
+    const ORDER: [&str; 5] = [
+        "read",
+        "mutate-local",
+        "mutate-external",
+        "network-egress",
+        "unknown",
+    ];
+    evidence
+        .iter()
+        .filter_map(|a| a.side_effect_class.as_deref())
+        .max_by_key(|cls| {
+            ORDER
+                .iter()
+                .position(|o| o == cls)
+                .unwrap_or(ORDER.len() - 1)
+        })
+        .map(|s| s.to_string())
+}
+
+/// Strictest recording mode across actions: Full > Delta > Validation.
+/// Mirrors the JS emitter's recording-mode defaulting. `None` when the
+/// slice carries no modes.
+pub fn strictest_recording_mode(
+    evidence: &[ActionEvidence],
+) -> Option<crate::recording::RecordingMode> {
+    const ORDER: [crate::recording::RecordingMode; 3] = [
+        crate::recording::RecordingMode::Validation,
+        crate::recording::RecordingMode::Delta,
+        crate::recording::RecordingMode::Full,
+    ];
+    evidence
+        .iter()
+        .map(|a| &a.recording_mode)
+        .max_by_key(|mode| {
+            ORDER
+                .iter()
+                .position(|m| std::mem::discriminant(m) == std::mem::discriminant(mode))
+        })
+        .cloned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -155,6 +227,7 @@ mod tests {
             run_id: "run-1".into(),
             trace_id: None,
             session_id: None,
+            dsse_envelope: None,
             user_id: None,
             authorized_by: None,
             authority_origin: None,
@@ -212,6 +285,7 @@ mod tests {
             run_id: "run-2".into(),
             trace_id: Some("trace-xyz".into()),
             session_id: None,
+            dsse_envelope: None,
             user_id: Some("user-dana@acme.example".into()),
             authorized_by: None,
             authority_origin: Some("subject_consented".into()),
