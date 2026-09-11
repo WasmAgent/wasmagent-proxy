@@ -20,7 +20,7 @@ request — without replacing your existing gateway.
 - Classifies side-effects (read / mutate-local / mutate-external / network-egress)
 - Applies `validation → delta → full` recording policy from
   [@wasmagent/capability-compiler](https://github.com/WasmAgent/wasmagent-js/tree/main/packages/capability-compiler)
-- Emits PROV-DM-structured `AEPRecord` evidence, signed with Ed25519 (DSSE envelope)
+- Emits PROV-DM-structured `AEPRecord` evidence (aep/v0.5), signed with Ed25519
 - Sets `x-aep-recording-mode` response header for downstream observability
 
 ## Architecture
