@@ -5,7 +5,7 @@
 //! (RFC 8032: public key = scalar-from-seed × basepoint, identical in
 //! @noble/ed25519 and ed25519-dalek).
 
-use aep_core::{verify_record, verify_record_dsse, AepRecord, SigningKey};
+use aep_core::{verify_record_dsse, AepRecord, SigningKey};
 use base64::Engine as _;
 use std::path::PathBuf;
 
@@ -51,25 +51,10 @@ fn tampered_js_record_fails_binding() {
     assert!(verify_record_dsse(&record, &key.verifying_key()).is_err());
 }
 
-#[test]
-fn legacy_hex_signature_still_verifies() {
-    // Pre-aep/v0.5 gateway releases emitted hex-encoded signatures. The
-    // verifier must keep accepting them alongside the current base64 form.
-    let seed = [7u8; 32];
-    let key = SigningKey::from_bytes(&seed);
-    let mut record = load_fixture("wasmagent-js-dsse.json");
-    record.dsse_envelope = None;
-    aep_core::sign_record(&mut record, &key, "legacy-key");
-
-    // Re-encode the base64 signature as 128-char lowercase hex the legacy way.
-    let sig_b64 = record.signature.as_ref().expect("signature").sig.clone();
-    let decoded = base64::engine::general_purpose::STANDARD
-        .decode(sig_b64.as_bytes())
-        .expect("base64 sig");
-    record.signature.as_mut().expect("signature").sig = hex::encode(decoded);
-
-    verify_record(&record, &key.verifying_key()).expect("legacy hex signature must verify");
-}
+// The historical legacy signing profile (Ed25519 over SHA-256(struct-order
+// JSON)) was REMOVED in the clean cut — see signing.rs. Its specimens live
+// in wasmagent-protocol `conformance/aep/historical/` as evidence only; no
+// verifier supports them, so there is no legacy test here anymore.
 
 /// Tamper matrix: every mutation of a signed cross-language record must fail
 /// verification. Each case mutates exactly one thing about the JS-emitted
