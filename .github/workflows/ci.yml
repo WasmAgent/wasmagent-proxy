@@ -25,7 +25,7 @@ jobs:
       - run: cargo clippy --workspace -- -D warnings
       # --lib covers unit tests in every workspace crate (aep-core AND
       # proxy-wasm-evidence); `-p aep-core` alone skipped the filter crate.
-      - run: cargo test --workspace --lib
+      - run: cargo test --workspace --lib --locked
 
   schema-conformance:
     name: AEP schema conformance
@@ -35,7 +35,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Emit sample AEP records
-        run: cargo run -p aep-core --example emit_aep_samples -- target/aep-samples
+        run: cargo run --locked -p aep-core --example emit_aep_samples -- target/aep-samples
       - name: Fetch canonical schema (pinned @wasmagent/protocol)
         run: ci/fetch_aep_schema.sh target/schema
       - name: Validate samples against canonical aep-record schema
@@ -63,7 +63,7 @@ jobs:
       # verify under the Rust verifier and every tamper negative must fail.
       # The mirror gate (Rust-signed fixture verified by the JS verifier)
       # runs in wasmagent-js CI via its adversarial fixture test.
-      - run: cargo test -p aep-core --test cross_language
+      - run: cargo test -p aep-core --test cross_language --locked
 
   protocol-corpus:
     name: AEP Protocol Corpus (consumer-side)
@@ -79,7 +79,7 @@ jobs:
           ref: main
           path: wasmagent-protocol
       - name: Enforce corpus authenticity + chain verdicts
-        run: cargo test -p aep-core --test protocol_corpus
+        run: cargo test --locked -p aep-core --test protocol_corpus
         env:
           AEP_PROTOCOL_CORPUS: ${{ github.workspace }}/wasmagent-protocol/conformance/aep
 
@@ -92,7 +92,7 @@ jobs:
         with:
           targets: wasm32-wasip1
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build -p proxy-wasm-evidence --target wasm32-wasip1 --release
+      - run: cargo build --locked -p proxy-wasm-evidence --target wasm32-wasip1 --release
       - uses: actions/upload-artifact@v4
         with:
           name: proxy-wasm-evidence.wasm
