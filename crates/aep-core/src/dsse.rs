@@ -87,29 +87,55 @@ pub fn sign_record_dsse(
     // Floor consistency (aep/v0.5): the floor must be the weakest observed
     // grade — a stronger floor masks weak authorizations behind a
     // strong-looking record (the exact attack the floor exists to expose).
-    if let (Some(floor), Some(observed)) = (
-        &record.run_attribution_backing_floor,
-        &record.run_attribution_backing_observed,
-    ) {
-        if !observed.is_empty() {
-            const ORDER: [&str; 4] = [
-                "unknown",
-                "operator_asserted",
-                "principal_key_signed",
-                "qualified_signature",
-            ];
-            let rank = |g: &str| ORDER.iter().position(|o| *o == g);
-            if rank(floor).is_some() && observed.iter().all(|g| rank(g).is_some()) {
-                let floor_rank = rank(floor).unwrap();
-                let weakest = observed.iter().map(|g| rank(g).unwrap()).min().unwrap();
-                if floor_rank != weakest {
-                    return Err(
-                        "attribution: run_attribution_backing_floor is not the weakest \
-                         grade in run_attribution_backing_observed"
-                            .to_string(),
-                    );
-                }
+    //
+    // FAIL CLOSED on all boundary conditions:
+    //   floor set + observed absent → reject (cannot verify weakest)
+    //   floor set + observed empty  → reject (cannot verify weakest)
+    //   unknown grade in floor or observed → reject (not in canonical vocab)
+    //   floor != weakest observed → reject (MUST NOT round up)
+    if let Some(floor) = &record.run_attribution_backing_floor {
+        const ORDER: [&str; 4] = [
+            "unknown",
+            "operator_asserted",
+            "principal_key_signed",
+            "qualified_signature",
+        ];
+        let rank = |g: &str| ORDER.iter().position(|o| *o == g);
+        if rank(floor).is_none() {
+            return Err(format!(
+                "attribution: floor grade \"{floor}\" is outside the canonical vocabulary"
+            ));
+        }
+        let observed = record
+            .run_attribution_backing_observed
+            .as_ref()
+            .ok_or_else(|| {
+                format!(
+                    "attribution: floor \"{floor}\" was provided without \
+                     run_attribution_backing_observed — cannot verify weakest-grade rule"
+                )
+            })?;
+        if observed.is_empty() {
+            return Err(
+                "attribution: floor was provided with an empty observed set — cannot verify \
+                 weakest-grade rule"
+                    .to_string(),
+            );
+        }
+        for g in observed {
+            if rank(g).is_none() {
+                return Err(format!(
+                    "attribution: observed grade \"{g}\" is outside the canonical vocabulary"
+                ));
             }
+        }
+        let floor_rank = rank(floor).unwrap();
+        let weakest = observed.iter().map(|g| rank(g).unwrap()).min().unwrap();
+        if floor_rank != weakest {
+            return Err(format!(
+                "attribution: run_attribution_backing_floor \"{floor}\" is not the weakest \
+                 observed grade — the floor MUST NOT round up"
+            ));
         }
     }
 
