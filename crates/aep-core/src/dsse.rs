@@ -81,11 +81,41 @@ pub fn sign_record_dsse(
     record: &mut AepRecord,
     key: &ed25519_dalek::SigningKey,
     key_id: &str,
-) -> Result<(), serde_json::Error> {
+) -> Result<(), String> {
     use ed25519_dalek::Signer;
 
+    // Floor consistency (aep/v0.5): the floor must be the weakest observed
+    // grade — a stronger floor masks weak authorizations behind a
+    // strong-looking record (the exact attack the floor exists to expose).
+    if let (Some(floor), Some(observed)) = (
+        &record.run_attribution_backing_floor,
+        &record.run_attribution_backing_observed,
+    ) {
+        if !observed.is_empty() {
+            const ORDER: [&str; 4] = [
+                "unknown",
+                "operator_asserted",
+                "principal_key_signed",
+                "qualified_signature",
+            ];
+            let rank = |g: &str| ORDER.iter().position(|o| *o == g);
+            if rank(floor).is_some() && observed.iter().all(|g| rank(g).is_some()) {
+                let floor_rank = rank(floor).unwrap();
+                let weakest = observed.iter().map(|g| rank(g).unwrap()).min().unwrap();
+                if floor_rank != weakest {
+                    return Err(
+                        "attribution: run_attribution_backing_floor is not the weakest \
+                         grade in run_attribution_backing_observed"
+                            .to_string(),
+                    );
+                }
+            }
+        }
+    }
+
     let run_id = record.run_id.clone();
-    let mut unsigned = serde_json::to_value(&*record)?;
+    let mut unsigned =
+        serde_json::to_value(&*record).map_err(|e| format!("serialize record: {e}"))?;
     if let Some(obj) = unsigned.as_object_mut() {
         obj.remove("signature");
         obj.remove("dsse_envelope");
@@ -184,6 +214,124 @@ fn payload_bytes_decoded(envelope: &DsseEnvelope) -> Result<Vec<u8>, &'static st
     base64::engine::general_purpose::STANDARD
         .decode(envelope.payload.as_bytes())
         .map_err(|_| "dsse payload is not valid base64")
+}
+
+#[cfg(test)]
+mod adversarial_tests {
+    use super::*;
+    use crate::evidence::ActionEvidence;
+    use crate::recording::RecordingMode;
+    use ed25519_dalek::VerifyingKey;
+
+    fn record_with(run_id: &str, tool: &str) -> AepRecord {
+        AepRecord {
+            schema_version: crate::evidence::AEP_SCHEMA_VERSION.into(),
+            run_id: run_id.into(),
+            trace_id: None,
+            session_id: None,
+            dsse_envelope: None,
+            user_id: None,
+            authorized_by: None,
+            authority_origin: None,
+            identity_source: None,
+            attribution_backing: None,
+            run_attribution_backing_floor: None,
+            run_attribution_backing_observed: None,
+            run_side_effect_class_max: None,
+            recording_mode: None,
+            actions: vec![ActionEvidence {
+                action_id: "a-1".into(),
+                tool_name: tool.into(),
+                state_changing: true,
+                precondition_digest: None,
+                result_digest: None,
+                timestamp_ms: 1_700_000_000_000,
+                parent_action_id: None,
+                causal_chain_id: None,
+                recording_mode: RecordingMode::Full,
+                capability_decision: None,
+                mcp_header_risk: None,
+                side_effect_class: None,
+                extra: Default::default(),
+            }],
+            created_at_ms: 1_700_000_000_000,
+            signature: None,
+            extra: Default::default(),
+        }
+    }
+
+    #[test]
+    fn floor_weaker_than_observed_is_rejected() {
+        let mut record = record_with("run-floor-lie", "bash");
+        record.run_attribution_backing_observed = Some(vec!["qualified_signature".into()]);
+        record.run_attribution_backing_floor = Some("operator_asserted".into());
+        let key = ed25519_dalek::SigningKey::from_bytes(&[1u8; 32]);
+        let err = sign_record_dsse(&mut record, &key, "k").unwrap_err();
+        assert!(err.contains("weakest"), "err: {err}");
+    }
+
+    #[test]
+    fn floor_equal_to_weakest_passes() {
+        let mut record = record_with("run-floor-ok", "bash");
+        record.run_attribution_backing_observed = Some(vec![
+            "operator_asserted".into(),
+            "qualified_signature".into(),
+        ]);
+        record.run_attribution_backing_floor = Some("operator_asserted".into());
+        let key = ed25519_dalek::SigningKey::from_bytes(&[1u8; 32]);
+        assert!(sign_record_dsse(&mut record, &key, "k").is_ok());
+    }
+
+    #[test]
+    fn signature_from_another_record_fails_subject_binding() {
+        // Envelope lifting: sign record A, attach A's envelope to a record
+        // with a different run_id — the subject binding must reject it.
+        let key = ed25519_dalek::SigningKey::from_bytes(&[2u8; 32]);
+        let mut a = record_with("run-victim", "bash");
+        sign_record_dsse(&mut a, &key, "k").expect("sign a");
+
+        let b = record_with("run-other", "bash");
+        let mut lifted = b;
+        lifted.dsse_envelope = a.dsse_envelope.clone();
+        let vkey = VerifyingKey::from(&key);
+        assert!(verify_record_dsse(&lifted, &vkey).is_err());
+    }
+
+    #[test]
+    fn unicode_run_id_round_trips() {
+        // CJK + emoji in run_id: both sides serialize raw UTF-8 (no escapes)
+        // so the canonical bytes and the DSSE binding must agree.
+        let mut record = record_with("run-健壮性-🛡", "bash");
+        let key = ed25519_dalek::SigningKey::from_bytes(&[3u8; 32]);
+        sign_record_dsse(&mut record, &key, "k").expect("sign unicode run");
+        verify_record_dsse(&record, &key.verifying_key()).expect("unicode verify");
+    }
+
+    #[test]
+    fn large_payload_signs_and_verifies() {
+        // Stress: a wide record (many actions) still signs/verifies.
+        let mut record = record_with("run-large", "bash");
+        for i in 0..2000 {
+            record.actions.push(ActionEvidence {
+                action_id: format!("a-{i}"),
+                tool_name: format!("tool-{}", i % 7),
+                state_changing: i % 3 == 0,
+                precondition_digest: None,
+                result_digest: None,
+                timestamp_ms: 1_700_000_000_000 + i as u64,
+                parent_action_id: None,
+                causal_chain_id: None,
+                recording_mode: RecordingMode::Validation,
+                capability_decision: None,
+                mcp_header_risk: None,
+                side_effect_class: None,
+                extra: Default::default(),
+            });
+        }
+        let key = ed25519_dalek::SigningKey::from_bytes(&[5u8; 32]);
+        sign_record_dsse(&mut record, &key, "k").expect("sign large");
+        verify_record_dsse(&record, &key.verifying_key()).expect("verify large");
+    }
 }
 
 #[cfg(test)]
