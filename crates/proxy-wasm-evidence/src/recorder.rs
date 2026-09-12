@@ -96,26 +96,18 @@ pub fn infer_side_effect_class(method: &str, path: &str) -> SideEffectClass {
 }
 
 /// Full variant: accepts optional MCP-Method header for MCP 2026-07-28+ semantics.
+///
+/// FAIL-CLOSED rule: the MCP-Method header is client-controlled untrusted
+/// metadata. It may RAISE the inferred risk but must never LOWER it — the
+/// verdict is the more severe of the HTTP heuristic and the MCP semantics.
+/// `POST /x + MCP-Method: tools/list` therefore stays MutateExternal.
 pub fn infer_side_effect_class_with_mcp(
     method: &str,
     path: &str,
     mcp_method: Option<&str>,
 ) -> SideEffectClass {
-    // MCP-Method header overrides HTTP method heuristic for known MCP operations.
-    if let Some(mcp_op) = mcp_method {
-        return match mcp_op {
-            "tools/call" => SideEffectClass::MutateExternal,
-            "tools/list"
-            | "resources/list"
-            | "resources/read"
-            | "prompts/list"
-            | "prompts/get"
-            | "completion/complete" => SideEffectClass::Read,
-            _ => SideEffectClass::Unknown,
-        };
-    }
-
-    match method.to_uppercase().as_str() {
+    // Layer 1 — HTTP heuristic (independent of any client header).
+    let http = match method.to_uppercase().as_str() {
         "GET" | "HEAD" | "OPTIONS" => SideEffectClass::Read,
         "POST" | "PUT" | "PATCH" | "DELETE" => {
             if path.contains("/network/") || path.contains("/webhook") {
@@ -125,6 +117,43 @@ pub fn infer_side_effect_class_with_mcp(
             }
         }
         _ => SideEffectClass::Unknown,
+    };
+
+    // Layer 2 — untrusted MCP metadata may RAISE the verdict, never lower it.
+    let Some(mcp_op) = mcp_method else {
+        return http;
+    };
+    let mcp = match mcp_op {
+        "tools/call" => SideEffectClass::MutateExternal,
+        "tools/list"
+        | "resources/list"
+        | "resources/read"
+        | "prompts/list"
+        | "prompts/get"
+        | "completion/complete" => SideEffectClass::Read,
+        _ => SideEffectClass::Unknown,
+    };
+    max_severity(http, mcp)
+}
+
+/// Safety ordering for severity folding: unknown could be mutating, so it
+/// outranks read; the attacker-controlled header can never drag a verdict
+/// below what the HTTP layer already established.
+fn severity_rank(class: &SideEffectClass) -> u8 {
+    match class {
+        SideEffectClass::Read => 0,
+        SideEffectClass::Unknown => 1,
+        SideEffectClass::MutateLocal => 2,
+        SideEffectClass::MutateExternal => 3,
+        SideEffectClass::NetworkEgress => 4,
+    }
+}
+
+fn max_severity(a: SideEffectClass, b: SideEffectClass) -> SideEffectClass {
+    if severity_rank(&b) > severity_rank(&a) {
+        b
+    } else {
+        a
     }
 }
 
@@ -242,27 +271,49 @@ mod tests {
     }
 
     #[test]
-    fn mcp_method_tools_list_is_read() {
-        for op in [
-            "tools/list",
-            "resources/list",
-            "resources/read",
-            "prompts/get",
-        ] {
-            assert_eq!(
-                infer_side_effect_class_with_mcp("POST", "/mcp", Some(op)),
-                SideEffectClass::Read,
-                "expected Read for MCP op: {}",
-                op
+    fn mcp_header_cannot_downgrade_http_risk() {
+        // FAIL-CLOSED: untrusted client metadata may raise risk, never lower
+        // it. POST implies mutation regardless of any MCP-Method header.
+        for op in ["tools/list", "resources/read", "prompts/get"] {
+            assert!(
+                matches!(
+                    infer_side_effect_class_with_mcp("POST", "/dangerous", Some(op)),
+                    SideEffectClass::MutateExternal | SideEffectClass::NetworkEgress
+                ),
+                "POST must not be downgraded by MCP-Method: {op}"
             );
         }
+        assert!(matches!(
+            infer_side_effect_class_with_mcp("DELETE", "/items/1", Some("resources/read")),
+            SideEffectClass::MutateExternal
+        ));
+        // Escalation is allowed: GET + tools/call is mutating.
+        assert!(matches!(
+            infer_side_effect_class_with_mcp("GET", "/safe", Some("tools/call")),
+            SideEffectClass::MutateExternal
+        ));
+        // Network-egress heuristic cannot be downgraded either.
+        assert!(matches!(
+            infer_side_effect_class_with_mcp("POST", "/network/export", Some("tools/list")),
+            SideEffectClass::NetworkEgress
+        ));
     }
 
     #[test]
-    fn mcp_method_unknown_op_is_unknown() {
+    fn mcp_method_tools_list_is_read_on_safe_http() {
+        // Read semantics only apply where the HTTP layer is already safe.
+        assert_eq!(
+            infer_side_effect_class_with_mcp("GET", "/mcp", Some("tools/list")),
+            SideEffectClass::Read
+        );
+    }
+
+    #[test]
+    fn mcp_method_unknown_op_cannot_lower_http_verdict() {
+        // POST + unknown MCP op: HTTP mutation stands (Unknown never lowers).
         assert_eq!(
             infer_side_effect_class_with_mcp("POST", "/mcp", Some("custom/operation")),
-            SideEffectClass::Unknown
+            SideEffectClass::MutateExternal
         );
     }
 

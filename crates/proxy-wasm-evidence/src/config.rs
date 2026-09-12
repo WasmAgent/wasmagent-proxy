@@ -112,31 +112,39 @@ mod tests {
 
     #[test]
     fn validate_rejects_zero_evidence_buffer() {
-        let mut config = Config::default();
-        config.max_evidence_buffer = 0;
+        let config = Config {
+            max_evidence_buffer: 0,
+            ..Config::default()
+        };
         let err = config.validate().expect_err("zero buffer must be rejected");
         assert!(err.contains("max_evidence_buffer"), "got: {err}");
     }
 
     #[test]
     fn validate_accepts_32_byte_hex_signing_key() {
-        let mut config = Config::default();
-        config.signing_key_hex = Some("00".repeat(32));
+        let config = Config {
+            signing_key_hex: Some("00".repeat(32)),
+            ..Config::default()
+        };
         config.validate().expect("32-byte hex key is valid");
     }
 
     #[test]
     fn validate_rejects_non_hex_signing_key() {
-        let mut config = Config::default();
-        config.signing_key_hex = Some("<inject-at-deploy-time>".into());
+        let config = Config {
+            signing_key_hex: Some("<inject-at-deploy-time>".into()),
+            ..Config::default()
+        };
         let err = config.validate().expect_err("non-hex key must be rejected");
         assert!(err.contains("not valid hex"), "got: {err}");
     }
 
     #[test]
     fn validate_rejects_wrong_length_signing_key() {
-        let mut config = Config::default();
-        config.signing_key_hex = Some("00".repeat(31));
+        let config = Config {
+            signing_key_hex: Some("00".repeat(31)),
+            ..Config::default()
+        };
         let err = config.validate().expect_err("31-byte key must be rejected");
         assert!(err.contains("32 bytes"), "got: {err}");
     }

@@ -8,20 +8,29 @@
 | **Not recommended for** | Endpoint-local MCP servers; general gateway RBAC/routing |
 
 
-> Proxy-Wasm evidence engine — cryptographic AEP audit layer for Agent/MCP/A2A traffic
+> Proxy-Wasm evidence engine — request classification and AEP evidence capture for Agent/MCP/A2A traffic
 
 A Wasm module that plugs into any [Proxy-Wasm](https://github.com/proxy-wasm/spec)-compatible
-gateway (Envoy, Istio, Kong, Consul) and adds wasmagent-level evidence recording to every
+gateway (Envoy, Istio, Kong, Consul) and records wasmagent-level evidence for every
 request — without replacing your existing gateway.
 
 ## What it does
 
 - Intercepts HTTP requests and responses at the gateway
-- Classifies side-effects (read / mutate-local / mutate-external / network-egress)
+- Classifies side-effects (read / mutate-local / mutate-external / network-egress);
+  the MCP-Method header is untrusted metadata and can raise but never lower the verdict
 - Applies `validation → delta → full` recording policy from
   [@wasmagent/capability-compiler](https://github.com/WasmAgent/wasmagent-js/tree/main/packages/capability-compiler)
-- Emits PROV-DM-structured `AEPRecord` evidence (aep/v0.5), signed with Ed25519
+- Captures PROV-DM-structured `AEPRecord` evidence inputs (aep/v0.5) into a per-context evidence buffer
 - Sets `x-aep-recording-mode` response header for downstream observability
+
+> **Honest status (evidence emission):** the gateway data plane currently
+> *captures and classifies* evidence; it does not yet assemble, sign, or export
+> complete `AEPRecord`s to a durable sink from the Wasm data plane. The signing
+> primitives (`sign_record_dsse`, Ed25519) live in `crates/aep-core` and are
+> exercised by the central conformance corpus; wiring the data plane to a
+> signed export pipeline is in progress. Treat "signed gateway evidence" as a
+> roadmap item until then.
 
 ## Architecture
 
