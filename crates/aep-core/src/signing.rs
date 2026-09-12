@@ -70,6 +70,59 @@ pub fn sign_record(record: &mut AepRecord, key: &DalekSigningKey, key_id: &str) 
     });
 }
 
+/// Which historical message construction a legacy signature covers.
+///
+/// The Rust gateway signer hashes the canonical bytes before signing
+/// (`Ed25519(SHA256(canonical))`), while the JS emitter signs the raw
+/// canonical bytes (`Ed25519(canonical)`). Both are legitimate historical
+/// profiles; verification that accepts either MUST report which one held
+/// so `valid: true` never hides a semantics choice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LegacySignatureProfile {
+    /// Ed25519 over SHA-256(canonical bytes) — this crate's signer.
+    CanonicalSha256,
+    /// Ed25519 over the raw canonical bytes — the JS emitter.
+    RawCanonical,
+}
+
+/// Verify a legacy-signed record, accepting either historical message
+/// construction and reporting which profile held. The primary check is this
+/// crate's own profile (SHA-256); the raw-canonical profile exists so
+/// records signed by the JS emitter verify without shapeshifting.
+pub fn verify_record_profile(
+    record: &AepRecord,
+    verifying_key: &VerifyingKey,
+) -> Result<LegacySignatureProfile, VerificationError> {
+    let sig_meta = record
+        .signature
+        .as_ref()
+        .ok_or(VerificationError::MissingSignature)?;
+    let sig_bytes = decode_signature(&sig_meta.sig)?;
+    let sig_array: [u8; ed25519_dalek::Signature::BYTE_SIZE] = sig_bytes
+        .try_into()
+        .map_err(|_| VerificationError::InvalidSignatureLength)?;
+    let sig = ed25519_dalek::Signature::from_bytes(&sig_array);
+
+    let mut unsigned = record.clone();
+    unsigned.signature = None;
+
+    // Profile 1 (primary): SHA-256(canonical bytes).
+    let hashed = canonical_bytes(&unsigned);
+    if verifying_key.verify_strict(&hashed, &sig).is_ok() {
+        return Ok(LegacySignatureProfile::CanonicalSha256);
+    }
+
+    // Profile 2 (compatibility): raw canonical bytes — matches the JS
+    // emitter's message construction, so JS-signed legacy records verify
+    // without re-signing.
+    let raw = serde_json::to_vec(&unsigned).map_err(|_| VerificationError::SignatureMismatch)?;
+    if verifying_key.verify_strict(&raw, &sig).is_ok() {
+        return Ok(LegacySignatureProfile::RawCanonical);
+    }
+
+    Err(VerificationError::SignatureMismatch)
+}
+
 pub fn verify_record(
     record: &AepRecord,
     verifying_key: &VerifyingKey,
@@ -199,6 +252,46 @@ mod tests {
         sign_record(&mut record, &key, "key-1");
 
         assert!(verify_record(&record, &wrong_pubkey).is_err());
+    }
+
+    #[test]
+    fn profile_reported_for_our_own_signature() {
+        let mut record = test_record();
+        let key = DalekSigningKey::generate(&mut rand::rng());
+        sign_record(&mut record, &key, "key-1");
+
+        assert_eq!(
+            verify_record_profile(&record, &key.verifying_key()).expect("verify"),
+            LegacySignatureProfile::CanonicalSha256
+        );
+    }
+
+    #[test]
+    fn raw_canonical_profile_verifies_js_signed_records() {
+        // The JS emitter signs the RAW canonical JSON bytes (no SHA-256
+        // pre-hash). verify_record rejects that construction; the
+        // compatibility profile accepts it and names it.
+        use base64::Engine as _;
+
+        let key = DalekSigningKey::from_bytes(&[9u8; 32]);
+        let mut record = test_record();
+        record.signature = None;
+        let raw = serde_json::to_vec(&record).expect("serialize");
+        let sig = key.sign(&raw);
+
+        record.signature = Some(crate::evidence::AepSignature {
+            alg: "ed25519".into(),
+            key_id: "js-emitter".into(),
+            sig: base64::engine::general_purpose::STANDARD.encode(sig.to_bytes()),
+        });
+
+        // Strict single-profile verifier rejects the foreign construction.
+        assert!(verify_record(&record, &key.verifying_key()).is_err());
+        // Compatibility verifier accepts it and reports the profile.
+        assert_eq!(
+            verify_record_profile(&record, &key.verifying_key()).expect("verify"),
+            LegacySignatureProfile::RawCanonical
+        );
     }
 
     #[test]
