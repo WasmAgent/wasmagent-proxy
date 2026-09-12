@@ -222,9 +222,11 @@ mod tests {
                 capability_decision: None,
                 mcp_header_risk: None,
                 side_effect_class: Some("network-egress".into()),
+                extra: Default::default(),
             }],
             created_at_ms: 1_700_000_000_000,
             signature: None,
+            extra: Default::default(),
         }
     }
 

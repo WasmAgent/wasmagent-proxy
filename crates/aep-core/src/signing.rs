@@ -56,7 +56,12 @@ fn decode_signature(sig: &str) -> Result<Vec<u8>, VerificationError> {
 }
 
 pub fn sign_record(record: &mut AepRecord, key: &DalekSigningKey, key_id: &str) {
-    let canonical = canonical_bytes(record);
+    // Sign the UNSIGNED form: a previous `signature` value (e.g. when
+    // re-signing a record emitted elsewhere) must not be covered by the new
+    // signature — the JS verifier strips `signature` before canonicalizing.
+    let mut unsigned = record.clone();
+    unsigned.signature = None;
+    let canonical = canonical_bytes(&unsigned);
     let sig = key.sign(&canonical);
     record.signature = Some(crate::evidence::AepSignature {
         alg: "ed25519".into(),
@@ -129,9 +134,11 @@ mod tests {
                 capability_decision: None,
                 mcp_header_risk: None,
                 side_effect_class: None,
+                extra: Default::default(),
             }],
             created_at_ms: 1_700_000_000_000,
             signature: None,
+            extra: Default::default(),
         }
     }
 

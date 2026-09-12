@@ -8,6 +8,14 @@ pub enum RecordingMode {
     Full,
 }
 
+impl Default for RecordingMode {
+    /// `validation` is the semantic default: cheapest mode, and the emitter
+    /// falls back to it for read-only actions with no anomaly signals.
+    fn default() -> Self {
+        RecordingMode::Validation
+    }
+}
+
 impl RecordingMode {
     /// Wire-format identifier for this mode: the snake_case form serialized into
     /// AEP records (see the `serde(rename_all = "snake_case")` above) and emitted

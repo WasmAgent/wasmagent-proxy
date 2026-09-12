@@ -34,6 +34,7 @@ fn minimal_record() -> AepRecord {
         actions: vec![],
         created_at_ms: 1_700_000_000_000,
         signature: None,
+        ..Default::default()
     }
 }
 
@@ -73,12 +74,15 @@ fn annotated_record() -> AepRecord {
                 decision: "allow".into(),
                 reason_code: Some("policy-match".into()),
                 deny_reason_class: None,
+                ..Default::default()
             }),
             mcp_header_risk: Some("credential_leak".into()),
             side_effect_class: Some(SideEffectClass::NetworkEgress.canonical_str().into()),
+            ..Default::default()
         }],
         created_at_ms: 1_700_000_000_001,
         signature: None,
+        ..Default::default()
     }
 }
 
@@ -111,9 +115,11 @@ fn signed_record(key: &SigningKey) -> AepRecord {
             capability_decision: None,
             mcp_header_risk: None,
             side_effect_class: Some(SideEffectClass::Read.canonical_str().into()),
+            ..Default::default()
         }],
         created_at_ms: 1_700_000_000_002,
         signature: None,
+        ..Default::default()
     };
     sign_record_dsse(&mut record, key, "ci-sample-key");
     record

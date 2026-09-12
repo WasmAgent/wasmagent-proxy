@@ -159,6 +159,7 @@ pub fn build_evidence(
         capability_decision: None,
         mcp_header_risk: mcp_header_risk.map(|r| r.as_str().to_string()),
         side_effect_class: Some(risk_ctx.side_effect_class.canonical_str().to_string()),
+        extra: Default::default(),
     }
 }
 
@@ -342,6 +343,7 @@ mod tests {
             capability_decision: None,
             mcp_header_risk: None,
             side_effect_class: None,
+            extra: Default::default(),
         }
     }
 

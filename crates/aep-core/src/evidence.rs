@@ -39,7 +39,7 @@ impl McpHeaderRisk {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CapabilityDecision {
     pub capability: String,
     pub subject: String,
@@ -52,9 +52,13 @@ pub struct CapabilityDecision {
     /// `policy-rule`, `other`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deny_reason_class: Option<String>,
+    /// Catch-all for unmodeled fields (see AepRecord.extra — canonical
+    /// digests cover every field, so nothing may be dropped).
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ActionEvidence {
     pub action_id: String,
     pub tool_name: String,
@@ -88,9 +92,12 @@ pub struct ActionEvidence {
     /// [`SideEffectClass::canonical_str`]).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub side_effect_class: Option<String>,
+    /// Catch-all for unmodeled fields (see AepRecord.extra).
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AepRecord {
     pub schema_version: String,
     pub run_id: String,
@@ -132,9 +139,15 @@ pub struct AepRecord {
     pub created_at_ms: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub signature: Option<AepSignature>,
+    /// Catch-all for fields this struct does not model. Canonical digests
+    /// cover EVERY field of a record, so foreign producers' extra fields
+    /// must survive a deserialize→serialize round trip for the DSSE
+    /// subject-binding and signature checks to be reproducible in Rust.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AepSignature {
     pub alg: String,
     pub key_id: String,
@@ -142,7 +155,7 @@ pub struct AepSignature {
 }
 
 /// One signature inside a DSSE envelope (field names match the DSSE spec).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DsseSignature {
     pub keyid: String,
     pub sig: String,
@@ -152,7 +165,7 @@ pub struct DsseSignature {
 /// `payload` is base64 of the in-toto Statement JSON. Field names follow the
 /// DSSE spec's camelCase wire form (`payloadType`), matching the canonical
 /// aep-record schema and the JS `DSSEEnvelope` type.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DsseEnvelope {
     pub payload_type: String,
@@ -250,9 +263,11 @@ mod tests {
                 capability_decision: None,
                 mcp_header_risk: None,
                 side_effect_class: None,
+                extra: Default::default(),
             }],
             created_at_ms: 1_700_000_000_000,
             signature: None,
+            extra: Default::default(),
         };
 
         let json = serde_json::to_string(&record).expect("serialize AepRecord");
@@ -311,9 +326,11 @@ mod tests {
                 capability_decision: None,
                 mcp_header_risk: Some(McpHeaderRisk::PiiLeak.as_str().into()),
                 side_effect_class: Some("network-egress".into()),
+                extra: Default::default(),
             }],
             created_at_ms: 1_700_000_000_001,
             signature: None,
+            extra: Default::default(),
         };
 
         let json = serde_json::to_string(&record).expect("serialize AepRecord");
@@ -373,6 +390,7 @@ mod tests {
             capability_decision: None,
             mcp_header_risk: Some("credential_leak".into()),
             side_effect_class: Some("mutate-external".into()),
+            extra: Default::default(),
         };
 
         let value = serde_json::to_value(evidence).expect("serialize ActionEvidence");
@@ -400,6 +418,7 @@ mod tests {
             capability_decision: None,
             mcp_header_risk: Some(McpHeaderRisk::HighEntropyValue.as_str().into()),
             side_effect_class: Some("network-egress".into()),
+            extra: Default::default(),
         };
 
         let json = serde_json::to_string(&original).expect("serialize ActionEvidence");
