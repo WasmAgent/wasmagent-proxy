@@ -3,7 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use aep_core::{
     evidence::ActionEvidence,
-    recording::{compile_recording_policy, RiskContext, SideEffectClass},
+    recording::{compile_recording_policy, RecordingMode, RiskContext, SideEffectClass},
     McpHeaderRisk,
 };
 
@@ -183,6 +183,24 @@ pub fn unix_millis_checked(time: SystemTime) -> Option<u64> {
 /// failed host clock is visible to the caller.
 pub fn unix_millis(time: SystemTime) -> u64 {
     unix_millis_checked(time).unwrap_or(0)
+}
+
+/// Recording-mode assurance ordering: Validation < Delta < Full.
+///
+/// The operator's configured `default_mode` is the MINIMUM baseline for
+/// captured evidence — the compile_recording_policy verdict may only raise
+/// it, never lower it (audit P0: `default_mode=full + GET` must stay Full).
+pub fn max_recording_mode(a: RecordingMode, b: RecordingMode) -> RecordingMode {
+    let rank = |m: &RecordingMode| match m {
+        RecordingMode::Validation => 0u8,
+        RecordingMode::Delta => 1,
+        RecordingMode::Full => 2,
+    };
+    if rank(&b) > rank(&a) {
+        b
+    } else {
+        a
+    }
 }
 
 pub fn build_evidence(

@@ -189,13 +189,20 @@ impl HttpContext for EvidenceFilter {
         let tool_name = format!("{} {}", self.method, self.path);
         let mcp_header_risk =
             classify_mcp_headers(self.mcp_method.as_deref(), self.mcp_name.as_deref());
-        let evidence = build_evidence(
+        // The configured default_mode is the operator's MINIMUM recording
+        // baseline: evidence may escalate above it, never fall below it
+        // (audit P0: default_mode=full + GET must stay Full).
+        let mut evidence = build_evidence(
             action_id,
             tool_name,
             &risk_ctx,
             self.current_time_ms(),
             None,
             mcp_header_risk,
+        );
+        evidence.recording_mode = crate::recorder::max_recording_mode(
+            evidence.recording_mode.clone(),
+            self.config.default_mode.clone(),
         );
         // Emit the canonical snake_case form (matching the `recording_mode` field
         // serialized into AEP records) rather than the Debug-format PascalCase.
