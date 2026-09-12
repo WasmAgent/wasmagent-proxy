@@ -16,12 +16,14 @@
 //! compiled on every target so it can be unit-tested natively.
 
 pub mod config;
+pub mod emitter;
 pub mod recorder;
 
 #[cfg(target_arch = "wasm32")]
 mod filter;
 
 pub use config::{Config, PluginConfig};
+pub use emitter::{assemble_and_sign, EmitterIdentity};
 pub use recorder::{build_evidence, infer_side_effect_class};
 
 #[cfg(target_arch = "wasm32")]

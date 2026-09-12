@@ -19,6 +19,9 @@ pub const DEFAULT_EVIDENCE_BUFFER_CAPACITY: usize = 1024;
 pub struct EvidenceBuffer {
     entries: VecDeque<ActionEvidence>,
     capacity: usize,
+    /// Entries displaced by capacity pressure — the "capture completeness"
+    /// signal: dropped evidence must be observable, never silent.
+    dropped_total: u64,
 }
 
 impl EvidenceBuffer {
@@ -32,7 +35,14 @@ impl EvidenceBuffer {
         Self {
             entries: VecDeque::with_capacity(capacity),
             capacity,
+            dropped_total: 0,
         }
+    }
+
+    /// Entries evicted by capacity pressure since creation — surfaced as the
+    /// `aep.evidence.dropped_total` completeness signal.
+    pub fn dropped_total(&self) -> u64 {
+        self.dropped_total
     }
 
     /// Create a new buffer with the default capacity of 1024 entries.
@@ -50,6 +60,9 @@ impl EvidenceBuffer {
         } else {
             None
         };
+        if evicted.is_some() {
+            self.dropped_total += 1;
+        }
         self.entries.push_back(evidence);
         evicted
     }
@@ -158,12 +171,18 @@ fn max_severity(a: SideEffectClass, b: SideEffectClass) -> SideEffectClass {
 }
 
 /// Convert a wall-clock time to Unix milliseconds. Times before the epoch map
-/// to 0. Split out from the Proxy-Wasm hostcall so the conversion is unit
-/// testable on native targets ([`filter`] is compiled only for wasm32).
-pub fn unix_millis(time: SystemTime) -> u64 {
+/// to `None` — callers must surface a clock-failure signal rather than
+/// silently stamping evidence with 1970-01-01.
+pub fn unix_millis_checked(time: SystemTime) -> Option<u64> {
     time.duration_since(UNIX_EPOCH)
+        .ok()
         .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
+}
+
+/// Legacy convenience: epoch-0 fallback. Prefer [`unix_millis_checked`] so a
+/// failed host clock is visible to the caller.
+pub fn unix_millis(time: SystemTime) -> u64 {
+    unix_millis_checked(time).unwrap_or(0)
 }
 
 pub fn build_evidence(
