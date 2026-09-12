@@ -59,6 +59,29 @@ pub fn assemble_and_sign(
     sign_record_dsse(&mut record, key, &identity.key_id).map(|()| record)
 }
 
+/// Sink port: signed records reach the outside world through this trait.
+/// Implementations decide the transport — log line, HTTP POST, or durable
+/// queue. The Wasm filter calls `emit` after `assemble_and_sign`.
+pub trait EvidenceSink {
+    /// Persist or forward a signed record. Returns Err on transport failure
+    /// so the caller can surface an export-failure signal.
+    fn emit(&mut self, record: &AepRecord) -> Result<(), String>;
+}
+
+/// In-memory test sink — captures records for assertions.
+#[cfg(test)]
+pub struct InMemorySink {
+    pub records: Vec<AepRecord>,
+}
+
+#[cfg(test)]
+impl EvidenceSink for InMemorySink {
+    fn emit(&mut self, record: &AepRecord) -> Result<(), String> {
+        self.records.push(record.clone());
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
