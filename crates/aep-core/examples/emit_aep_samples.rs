@@ -11,8 +11,8 @@ use std::fs;
 use std::path::Path;
 
 use aep_core::{
-    recording::SideEffectClass, sign_record, sign_record_dsse, ActionEvidence, AepRecord,
-    CapabilityDecision, RecordingMode, SigningKey, AEP_SCHEMA_VERSION,
+    recording::SideEffectClass, sign_record_dsse, ActionEvidence, AepRecord, CapabilityDecision,
+    RecordingMode, SigningKey, AEP_SCHEMA_VERSION,
 };
 
 fn minimal_record() -> AepRecord {
@@ -121,7 +121,7 @@ fn signed_record(key: &SigningKey) -> AepRecord {
         signature: None,
         ..Default::default()
     };
-    sign_record_dsse(&mut record, key, "ci-sample-key");
+    sign_record_dsse(&mut record, key, "ci-sample-key").expect("sign dsse record");
     record
 }
 

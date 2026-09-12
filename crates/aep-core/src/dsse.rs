@@ -389,6 +389,35 @@ mod tests {
     }
 
     #[test]
+    fn canonical_json_orders_keys_by_utf8_bytes_matching_js() {
+        // Same pin as wasmagent-js `canonical.boundary.test.ts`: keys sort by
+        // UTF-8 byte order ("a" 0x61 < "Ａ" EF BC A1 < "𐀀" F0 90 80 80), and by
+        // BTreeMap order rather than insertion order — if `preserve_order`
+        // were ever enabled transitively, this assertion fails loudly.
+        let mut map = serde_json::Map::new();
+        map.insert("\u{10000}".to_string(), serde_json::json!(1));
+        map.insert("\u{FF21}".to_string(), serde_json::json!(2));
+        map.insert("a".to_string(), serde_json::json!(3));
+        assert_eq!(
+            canonical_json(&serde_json::Value::Object(map)),
+            "{\"a\":3,\"Ａ\":2,\"𐀀\":1}"
+        );
+    }
+
+    #[test]
+    fn canonical_json_keeps_proto_key() {
+        // serde BTreeMap treats "__proto__" as an ordinary string key; the JS
+        // canonicalizer must (and does, via defineProperty) keep it too.
+        let mut map = serde_json::Map::new();
+        map.insert("__proto__".to_string(), serde_json::json!({"x":1}));
+        map.insert("run_id".to_string(), serde_json::json!("r1"));
+        assert_eq!(
+            canonical_json(&serde_json::Value::Object(map)),
+            "{\"__proto__\":{\"x\":1},\"run_id\":\"r1\"}"
+        );
+    }
+
+    #[test]
     fn sign_and_verify_dsse_round_trip() {
         let mut record = sample_record();
         let key = ed25519_dalek::SigningKey::from_bytes(&[7u8; 32]);
