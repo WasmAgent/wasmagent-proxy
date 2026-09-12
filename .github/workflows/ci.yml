@@ -45,6 +45,20 @@ jobs:
             --schema target/schema/aep-record.schema.json \
             --samples-dir target/aep-samples
 
+  cross-language-conformance:
+    name: AEP Cross-Language Conformance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # `cargo test --lib` skips integration tests under crates/*/tests/ —
+      # run the cross-language DSSE gate explicitly: JS-emitted fixtures must
+      # verify under the Rust verifier and every tamper negative must fail.
+      # The mirror gate (Rust-signed fixture verified by the JS verifier)
+      # runs in wasmagent-js CI via its adversarial fixture test.
+      - run: cargo test -p aep-core --test cross_language
+
   wasm-build:
     name: Wasm build
     runs-on: ubuntu-latest

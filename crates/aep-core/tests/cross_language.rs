@@ -70,3 +70,108 @@ fn legacy_hex_signature_still_verifies() {
 
     verify_record(&record, &key.verifying_key()).expect("legacy hex signature must verify");
 }
+
+/// Tamper matrix: every mutation of a signed cross-language record must fail
+/// verification. Each case mutates exactly one thing about the JS-emitted
+/// fixture; the DSSE PAE signature and the predicate/subject binding must
+/// reject all of them.
+mod tamper_matrix {
+    use super::*;
+
+    fn signed_fixture() -> (AepRecord, ed25519_dalek::VerifyingKey) {
+        let key = SigningKey::from_bytes(&js_test_seed());
+        (load_fixture("wasmagent-js-dsse.json"), key.verifying_key())
+    }
+
+    #[test]
+    fn tampered_run_id_fails() {
+        let (mut record, vk) = signed_fixture();
+        record.run_id = "run-impersonated".into();
+        assert!(verify_record_dsse(&record, &vk).is_err());
+    }
+
+    #[test]
+    fn tampered_actions_fail() {
+        let (mut record, vk) = signed_fixture();
+        record.actions[0].tool_name = "POST /tampered".into();
+        assert!(verify_record_dsse(&record, &vk).is_err());
+    }
+
+    #[test]
+    fn tampered_created_at_fails() {
+        let (mut record, vk) = signed_fixture();
+        record.created_at_ms = record.created_at_ms.wrapping_add(1);
+        assert!(verify_record_dsse(&record, &vk).is_err());
+    }
+
+    #[test]
+    fn tampered_attribution_floor_fails() {
+        let (mut record, vk) = signed_fixture();
+        // Round the floor up: the bytes no longer match what was signed, and
+        // a verifier-side semantic check would reject it independently.
+        record.run_attribution_backing_floor = Some("qualified_signature".into());
+        assert!(verify_record_dsse(&record, &vk).is_err());
+    }
+
+    #[test]
+    fn tampered_observed_grades_fail() {
+        let (mut record, vk) = signed_fixture();
+        record
+            .run_attribution_backing_observed
+            .as_mut()
+            .expect("fixture carries observed grades")
+            .push("unknown".into());
+        assert!(verify_record_dsse(&record, &vk).is_err());
+    }
+
+    #[test]
+    fn tampered_payload_fails_pae_signature() {
+        let (mut record, vk) = signed_fixture();
+        let envelope = record.dsse_envelope.as_mut().expect("envelope");
+        let mut statement: serde_json::Value = serde_json::from_slice(
+            &base64::engine::general_purpose::STANDARD
+                .decode(envelope.payload.as_bytes())
+                .expect("payload base64"),
+        )
+        .expect("payload json");
+        statement["predicate"]["run_id"] = serde_json::json!("run-impersonated");
+        envelope.payload = base64::engine::general_purpose::STANDARD
+            .encode(serde_json::to_vec(&statement).expect("re-serialize"));
+        assert!(verify_record_dsse(&record, &vk).is_err());
+    }
+
+    #[test]
+    fn tampered_subject_digest_fails_pae_signature() {
+        let (mut record, vk) = signed_fixture();
+        let envelope = record.dsse_envelope.as_mut().expect("envelope");
+        let mut statement: serde_json::Value = serde_json::from_slice(
+            &base64::engine::general_purpose::STANDARD
+                .decode(envelope.payload.as_bytes())
+                .expect("payload base64"),
+        )
+        .expect("payload json");
+        statement["subject"][0]["digest"]["sha256"] = serde_json::json!("0".repeat(64));
+        envelope.payload = base64::engine::general_purpose::STANDARD
+            .encode(serde_json::to_vec(&statement).expect("re-serialize"));
+        assert!(verify_record_dsse(&record, &vk).is_err());
+    }
+
+    #[test]
+    fn wrong_public_key_fails() {
+        let (record, _) = signed_fixture();
+        let attacker = SigningKey::from_bytes(&[0x42u8; 32]);
+        assert!(verify_record_dsse(&record, &attacker.verifying_key()).is_err());
+    }
+
+    #[test]
+    fn empty_signature_list_fails() {
+        let (mut record, vk) = signed_fixture();
+        record
+            .dsse_envelope
+            .as_mut()
+            .expect("envelope")
+            .signatures
+            .clear();
+        assert!(verify_record_dsse(&record, &vk).is_err());
+    }
+}
