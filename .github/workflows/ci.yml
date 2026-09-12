@@ -52,12 +52,36 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - name: Checkout wasmagent-protocol (central corpus)
+        uses: actions/checkout@v4
+        with:
+          repository: WasmAgent/wasmagent-protocol
+          ref: main
+          path: wasmagent-protocol
       # `cargo test --lib` skips integration tests under crates/*/tests/ —
       # run the cross-language DSSE gate explicitly: JS-emitted fixtures must
       # verify under the Rust verifier and every tamper negative must fail.
       # The mirror gate (Rust-signed fixture verified by the JS verifier)
       # runs in wasmagent-js CI via its adversarial fixture test.
       - run: cargo test -p aep-core --test cross_language
+
+  protocol-corpus:
+    name: AEP Protocol Corpus (consumer-side)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Checkout wasmagent-protocol (central corpus)
+        uses: actions/checkout@v4
+        with:
+          repository: WasmAgent/wasmagent-protocol
+          ref: main
+          path: wasmagent-protocol
+      - name: Enforce corpus authenticity + chain verdicts
+        run: cargo test -p aep-core --test protocol_corpus
+        env:
+          AEP_PROTOCOL_CORPUS: ${{ github.workspace }}/wasmagent-protocol/conformance/aep
 
   wasm-build:
     name: Wasm build
