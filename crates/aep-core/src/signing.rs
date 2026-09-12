@@ -139,6 +139,7 @@ mod tests {
             created_at_ms: 1_700_000_000_000,
             signature: None,
             extra: Default::default(),
+            authorization_evidence_count: Default::default(),
         }
     }
 

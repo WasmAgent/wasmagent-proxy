@@ -129,6 +129,10 @@ pub struct AepRecord {
     /// v0.5: every backing grade observed across the run.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub run_attribution_backing_observed: Option<Vec<String>>,
+    /// v0.5: selective-omission defense (canonical 0.1.10) — commits the
+    /// producer to a specific evidence population.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authorization_evidence_count: Option<u64>,
     /// v0.3: highest side-effect class observed across the run (canonical hyphenated).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub run_side_effect_class_max: Option<String>,
@@ -268,6 +272,7 @@ mod tests {
             created_at_ms: 1_700_000_000_000,
             signature: None,
             extra: Default::default(),
+            authorization_evidence_count: Default::default(),
         };
 
         let json = serde_json::to_string(&record).expect("serialize AepRecord");
@@ -331,6 +336,7 @@ mod tests {
             created_at_ms: 1_700_000_000_001,
             signature: None,
             extra: Default::default(),
+            authorization_evidence_count: Default::default(),
         };
 
         let json = serde_json::to_string(&record).expect("serialize AepRecord");
