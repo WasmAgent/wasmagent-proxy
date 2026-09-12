@@ -163,6 +163,11 @@ pub fn verify_record_dsse(
     use ed25519_dalek::Verifier;
 
     let envelope = record.dsse_envelope.as_ref().ok_or("no dsse envelope")?;
+    // AEP signature-count policy: exactly one signature. Current emitters
+    // produce one; multisig/threshold semantics are deliberately undefined.
+    if envelope.signatures.len() != 1 {
+        return Err("dsse envelope must carry exactly one signature");
+    }
     let envelope_sig = envelope
         .signatures
         .first()
@@ -174,6 +179,11 @@ pub fn verify_record_dsse(
         .try_into()
         .map_err(|_| "dsse signature has the wrong length")?;
     let sig = ed25519_dalek::Signature::from_bytes(&sig_array);
+
+    // AEP payload type: the envelope wraps an in-toto statement.
+    if envelope.payload_type != IN_TOTO_PAYLOAD_TYPE {
+        return Err("dsse payload type mismatch");
+    }
 
     // PAE covers the base64 payload STRING bytes (not the decoded statement) —
     // matching the JS verifier's paeEncode(payloadType, payloadB64) input.
@@ -187,6 +197,9 @@ pub fn verify_record_dsse(
     if statement.get("predicateType").and_then(|v| v.as_str()) != Some(AEP_PREDICATE_TYPE) {
         return Err("dsse predicateType mismatch");
     }
+    if statement.get("_type").and_then(|v| v.as_str()) != Some("https://in-toto.io/Statement/v1") {
+        return Err("in-toto statement _type mismatch");
+    }
 
     let mut unsigned = serde_json::to_value(record).map_err(|_| "record serialization")?;
     if let Some(obj) = unsigned.as_object_mut() {
@@ -194,15 +207,29 @@ pub fn verify_record_dsse(
         obj.remove("dsse_envelope");
     }
 
-    let subject_digest = statement
+    let subjects = statement
         .get("subject")
-        .and_then(|s| s.get(0))
-        .and_then(|s| s.get("digest"))
+        .and_then(|s| s.as_array())
+        .ok_or("dsse statement has no subject array")?;
+    if subjects.len() != 1 {
+        return Err("dsse statement must carry exactly one subject");
+    }
+    let subject = &subjects[0];
+    let subject_digest = subject
+        .get("digest")
         .and_then(|d| d.get("sha256"))
         .and_then(|v| v.as_str())
         .ok_or("dsse statement subject has no sha256 digest")?;
     if subject_digest != sha256_hex(canonical_json(&unsigned).as_bytes()) {
         return Err("dsse subject digest does not bind the record");
+    }
+    // Exact canonical subject name — binds the attestation to this run.
+    let subject_name = subject
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or("dsse statement subject has no name")?;
+    if subject_name != format!("urn:wasmagent:run:{}", record.run_id) {
+        return Err("dsse subject name does not match the run_id");
     }
     if statement.get("predicate") != Some(&unsigned) {
         return Err("dsse predicate does not match the record");
