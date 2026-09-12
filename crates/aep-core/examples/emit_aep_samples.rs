@@ -136,10 +136,19 @@ fn main() {
     // verify the DSSE envelope without Rust.
     let key = SigningKey::from_bytes(&[42u8; 32]);
 
-    let samples: [(&str, AepRecord); 3] = [
+    // Legacy-signed sample: sign_record covers SHA-256(canonical bytes) —
+    // the historical Rust gateway profile, distinct from the JS emitter's
+    // raw-canonical construction. Kept on a fixed seed so the conformance
+    // corpus (wasmagent-protocol/conformance/) stays reproducible.
+    let legacy_key = SigningKey::from_bytes(&[43u8; 32]);
+    let mut legacy_record = minimal_record();
+    aep_core::sign_record(&mut legacy_record, &legacy_key, "legacy-sample-key");
+
+    let samples: [(&str, AepRecord); 4] = [
         ("record-minimal.json", minimal_record()),
         ("record-annotated.json", annotated_record()),
         ("record-signed.json", signed_record(&key)),
+        ("record-legacy-sha256.json", legacy_record),
     ];
 
     for (name, record) in samples {
@@ -153,4 +162,10 @@ fn main() {
     // non-Rust verifiers can check the DSSE signature.
     let pubkey_hex = hex::encode(key.verifying_key().as_bytes());
     fs::write(out.join("verify-key.hex"), pubkey_hex).expect("write verifying key");
+
+    // Legacy sample key, same reason: records signed with the SHA-256
+    // profile verify outside Rust only if the key ships with them.
+    let legacy_pubkey_hex = hex::encode(legacy_key.verifying_key().as_bytes());
+    fs::write(out.join("verify-key-legacy.hex"), legacy_pubkey_hex)
+        .expect("write legacy verifying key");
 }
