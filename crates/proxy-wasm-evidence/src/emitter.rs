@@ -47,14 +47,25 @@ pub fn assemble_and_sign(
         schema_version: AEP_SCHEMA_VERSION.into(),
         run_id: format!("gw-{}", identity.trace_id),
         trace_id: Some(identity.trace_id.clone()),
-        user_id: Some(identity.agent_id.clone()),
+        // agent_id goes to extra (NOT user_id): the gateway observed this
+        // agent but did not authenticate the human behind it. Putting the
+        // agent identity in user_id would make the DSSE signature look like
+        // human-attribution evidence.
         actions: evidence.to_vec(),
         created_at_ms,
         ..Default::default()
     };
+    record.extra.insert(
+        "claimed_agent_id".to_string(),
+        identity.agent_id.clone().into(),
+    );
     record
         .extra
-        .insert("agent_id".to_string(), identity.agent_id.clone().into());
+        .insert("identity_source".to_string(), "self_asserted".into());
+    record.extra.insert(
+        "claimed_agent_id".to_string(),
+        identity.agent_id.clone().into(),
+    );
 
     sign_record_dsse(&mut record, key, &identity.key_id).map(|()| record)
 }
@@ -128,9 +139,11 @@ mod tests {
 
         assert_eq!(record.run_id, "gw-trace-abc");
         assert_eq!(record.trace_id.as_deref(), Some("trace-abc"));
-        assert_eq!(record.user_id.as_deref(), Some("gateway-eu-1"));
         assert_eq!(
-            record.extra.get("agent_id").and_then(|v| v.as_str()),
+            record
+                .extra
+                .get("claimed_agent_id")
+                .and_then(|v| v.as_str()),
             Some("gateway-eu-1")
         );
         assert!(record.dsse_envelope.is_some(), "DSSE envelope attached");
