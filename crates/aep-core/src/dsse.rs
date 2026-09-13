@@ -91,9 +91,13 @@ pub fn sign_record_dsse(
     // FAIL CLOSED on all boundary conditions:
     //   floor set + observed absent → reject (cannot verify weakest)
     //   floor set + observed empty  → reject (cannot verify weakest)
+    //   observed present + floor absent → reject (the pair ships together:
+    //     "reported alongside, never instead of"; an itemized list without a
+    //     floor permits exactly the masking the floor exists to prevent)
+    //   observed empty alone → reject (empty grading claim)
     //   unknown grade in floor or observed → reject (not in canonical vocab)
     //   floor != weakest observed → reject (MUST NOT round up)
-    if let Some(floor) = &record.run_attribution_backing_floor {
+    {
         const ORDER: [&str; 4] = [
             "unknown",
             "operator_asserted",
@@ -101,41 +105,53 @@ pub fn sign_record_dsse(
             "qualified_signature",
         ];
         let rank = |g: &str| ORDER.iter().position(|o| *o == g);
-        if rank(floor).is_none() {
-            return Err(format!(
-                "attribution: floor grade \"{floor}\" is outside the canonical vocabulary"
-            ));
+        if let Some(floor) = &record.run_attribution_backing_floor {
+            if rank(floor).is_none() {
+                return Err(format!(
+                    "attribution: floor grade \"{floor}\" is outside the canonical vocabulary"
+                ));
+            }
         }
-        let observed = record
-            .run_attribution_backing_observed
-            .as_ref()
-            .ok_or_else(|| {
+        let observed = record.run_attribution_backing_observed.as_ref();
+        if let Some(observed) = observed {
+            if observed.is_empty() {
+                return Err(
+                    "attribution: run_attribution_backing_observed was provided as an empty set \
+                     — an empty grading claim is not a valid record"
+                        .to_string(),
+                );
+            }
+            if record.run_attribution_backing_floor.is_none() {
+                return Err(
+                    "attribution: run_attribution_backing_observed was provided without \
+                     run_attribution_backing_floor — the pair ships together, never instead of \
+                     each other"
+                        .to_string(),
+                );
+            }
+            for g in observed {
+                if rank(g).is_none() {
+                    return Err(format!(
+                        "attribution: observed grade \"{g}\" is outside the canonical vocabulary"
+                    ));
+                }
+            }
+        }
+        if let Some(floor) = &record.run_attribution_backing_floor {
+            let observed = observed.ok_or_else(|| {
                 format!(
                     "attribution: floor \"{floor}\" was provided without \
                      run_attribution_backing_observed — cannot verify weakest-grade rule"
                 )
             })?;
-        if observed.is_empty() {
-            return Err(
-                "attribution: floor was provided with an empty observed set — cannot verify \
-                 weakest-grade rule"
-                    .to_string(),
-            );
-        }
-        for g in observed {
-            if rank(g).is_none() {
+            let floor_rank = rank(floor).unwrap();
+            let weakest = observed.iter().map(|g| rank(g).unwrap()).min().unwrap();
+            if floor_rank != weakest {
                 return Err(format!(
-                    "attribution: observed grade \"{g}\" is outside the canonical vocabulary"
+                    "attribution: run_attribution_backing_floor \"{floor}\" is not the weakest \
+                     observed grade — the floor MUST NOT round up"
                 ));
             }
-        }
-        let floor_rank = rank(floor).unwrap();
-        let weakest = observed.iter().map(|g| rank(g).unwrap()).min().unwrap();
-        if floor_rank != weakest {
-            return Err(format!(
-                "attribution: run_attribution_backing_floor \"{floor}\" is not the weakest \
-                 observed grade — the floor MUST NOT round up"
-            ));
         }
     }
 
@@ -201,8 +217,7 @@ pub fn verify_record_dsse(
         .signatures
         .first()
         .ok_or("dsse envelope has no signatures")?;
-    let sig_bytes = base64::engine::general_purpose::STANDARD
-        .decode(envelope_sig.sig.as_bytes())
+    let sig_bytes = decode_base64_lenient(envelope_sig.sig.as_str())
         .map_err(|_| "dsse signature is not valid base64")?;
     let sig_array: [u8; ed25519_dalek::Signature::BYTE_SIZE] = sig_bytes
         .try_into()
@@ -217,8 +232,7 @@ pub fn verify_record_dsse(
     // DSSE 1.0.2 §2: PAE covers the DECODED serialized body bytes, NOT the
     // base64 text from the JSON envelope. Decode base64 first, then compute
     // PAE over the raw body bytes.
-    let decoded_body = base64::engine::general_purpose::STANDARD
-        .decode(envelope.payload.as_bytes())
+    let decoded_body = decode_base64_lenient(&envelope.payload)
         .map_err(|_| "dsse payload is not valid base64")?;
     let pae = pae_encode(&envelope.payload_type, &decoded_body);
     verifying_key
@@ -270,9 +284,38 @@ pub fn verify_record_dsse(
     Ok(())
 }
 
-fn payload_bytes_decoded(envelope: &DsseEnvelope) -> Result<Vec<u8>, &'static str> {
+/// Decode base64 accepting both alphabets, as DSSE 1.0.2 requires ("Either
+/// standard or URL-safe base64 encodings are allowed. Signers may use either,
+/// and verifiers MUST accept either").
+///
+/// Strategy: normalize the URL-safe alphabet onto the standard one and decode
+/// with the standard engine. The mapping is a bijection ('-'→'+', '_'→'/'),
+/// so the decoding is unique for standard, URL-safe, and (undefined-by-spec
+/// but unambiguous) mixed-alphabet inputs alike — and it matches the Node and
+/// Python decoders' behavior byte-for-byte, keeping the three verifiers
+/// interoperable on any conforming envelope.
+fn decode_base64_lenient(input: &str) -> Result<Vec<u8>, &'static str> {
+    use base64::Engine;
+    let mut normalized = String::with_capacity(input.len() + 2);
+    for c in input.chars() {
+        match c {
+            '-' => normalized.push('+'),
+            '_' => normalized.push('/'),
+            other => normalized.push(other),
+        }
+    }
+    match normalized.len() % 4 {
+        2 => normalized.push_str("=="),
+        3 => normalized.push('='),
+        _ => {}
+    }
     base64::engine::general_purpose::STANDARD
-        .decode(envelope.payload.as_bytes())
+        .decode(normalized.as_bytes())
+        .map_err(|_| "invalid base64")
+}
+
+fn payload_bytes_decoded(envelope: &DsseEnvelope) -> Result<Vec<u8>, &'static str> {
+    decode_base64_lenient(&envelope.payload)
         .map_err(|_| "dsse payload is not valid base64")
 }
 
@@ -341,6 +384,77 @@ mod adversarial_tests {
         record.run_attribution_backing_floor = Some("operator_asserted".into());
         let key = ed25519_dalek::SigningKey::from_bytes(&[1u8; 32]);
         assert!(sign_record_dsse(&mut record, &key, "k").is_ok());
+    }
+
+    // Regression tests for the attribution guard paths — each guard added in
+    // review rounds must fail closed forever; a refactor that re-opens any of
+    // these bypasses must fail this suite.
+
+    #[test]
+    fn floor_with_absent_observed_is_rejected() {
+        let mut record = record_with("run-floor-no-obs", "bash");
+        record.run_attribution_backing_floor = Some("operator_asserted".into());
+        record.run_attribution_backing_observed = None;
+        let key = ed25519_dalek::SigningKey::from_bytes(&[1u8; 32]);
+        let err = sign_record_dsse(&mut record, &key, "k").unwrap_err();
+        assert!(
+            err.contains("without") && err.contains("observed"),
+            "err: {err}"
+        );
+    }
+
+    #[test]
+    fn floor_with_empty_observed_is_rejected() {
+        let mut record = record_with("run-floor-empty-obs", "bash");
+        record.run_attribution_backing_floor = Some("operator_asserted".into());
+        record.run_attribution_backing_observed = Some(vec![]);
+        let key = ed25519_dalek::SigningKey::from_bytes(&[1u8; 32]);
+        let err = sign_record_dsse(&mut record, &key, "k").unwrap_err();
+        assert!(err.contains("empty"), "err: {err}");
+    }
+
+    #[test]
+    fn observed_without_floor_is_rejected() {
+        // The pair ships together: an itemized observed list without a floor
+        // is exactly the shape that permits masking — reject, don't sign.
+        let mut record = record_with("run-obs-no-floor", "bash");
+        record.run_attribution_backing_observed =
+            Some(vec!["operator_asserted".into(), "qualified_signature".into()]);
+        record.run_attribution_backing_floor = None;
+        let key = ed25519_dalek::SigningKey::from_bytes(&[1u8; 32]);
+        let err = sign_record_dsse(&mut record, &key, "k").unwrap_err();
+        assert!(err.contains("pair ships together"), "err: {err}");
+    }
+
+    #[test]
+    fn empty_observed_without_floor_is_rejected() {
+        let mut record = record_with("run-empty-obs", "bash");
+        record.run_attribution_backing_observed = Some(vec![]);
+        record.run_attribution_backing_floor = None;
+        let key = ed25519_dalek::SigningKey::from_bytes(&[1u8; 32]);
+        let err = sign_record_dsse(&mut record, &key, "k").unwrap_err();
+        assert!(err.contains("empty"), "err: {err}");
+    }
+
+    #[test]
+    fn unknown_grade_in_floor_is_rejected() {
+        let mut record = record_with("run-unknown-floor", "bash");
+        record.run_attribution_backing_observed = Some(vec!["operator_asserted".into()]);
+        record.run_attribution_backing_floor = Some("wallet_attested".into());
+        let key = ed25519_dalek::SigningKey::from_bytes(&[1u8; 32]);
+        let err = sign_record_dsse(&mut record, &key, "k").unwrap_err();
+        assert!(err.contains("canonical vocabulary"), "err: {err}");
+    }
+
+    #[test]
+    fn unknown_grade_in_observed_is_rejected() {
+        let mut record = record_with("run-unknown-obs", "bash");
+        record.run_attribution_backing_observed =
+            Some(vec!["operator_asserted".into(), "biometric_bound".into()]);
+        record.run_attribution_backing_floor = Some("operator_asserted".into());
+        let key = ed25519_dalek::SigningKey::from_bytes(&[1u8; 32]);
+        let err = sign_record_dsse(&mut record, &key, "k").unwrap_err();
+        assert!(err.contains("canonical vocabulary"), "err: {err}");
     }
 
     #[test]
@@ -503,5 +617,115 @@ mod tests {
         record.user_id = Some("user-attacker".into());
         let verifying_key = VerifyingKey::from(&key);
         assert!(verify_record_dsse(&record, &verifying_key).is_err());
+    }
+
+    #[test]
+    fn tampered_payload_type_fails_verification() {
+        // DSSE 1.0.2: payloadType is inside the PAE, so mutating it must
+        // invalidate the signature — the verifier must not normalize or
+        // ignore the type before verifying.
+        let mut record = sample_record();
+        let key = ed25519_dalek::SigningKey::from_bytes(&[7u8; 32]);
+        sign_record_dsse(&mut record, &key, "gateway-key-1").expect("sign");
+        record
+            .dsse_envelope
+            .as_mut()
+            .expect("envelope")
+            .payload_type = "application/json".into();
+        let verifying_key = VerifyingKey::from(&key);
+        assert!(verify_record_dsse(&record, &verifying_key).is_err());
+    }
+
+    /// Sign a record whose payload AND signature base64 encodings provably
+    /// contain characters from both the standard alphabet ('+' and '/'), so
+    /// URL-safe re-encodings genuinely exercise the alternate alphabet.
+    ///
+    /// Vector construction: in base64, output '+'/'/' appear when the third
+    /// byte of an aligned triple is '>' (0x3E) or '?' (0x3F). Long runs of
+    /// those characters in the JSON guarantee such a byte exists at offset
+    /// 3k+2 for any prefix alignment, so the payload encoding deterministically
+    /// contains both characters.
+    fn signed_record_with_alternate_alphabet() -> (AepRecord, ed25519_dalek::SigningKey) {
+        let key = ed25519_dalek::SigningKey::from_bytes(&[7u8; 32]);
+        let pad_gt = ">".repeat(9);
+        let pad_qm = "?".repeat(9);
+        for i in 0..128u32 {
+            let mut record = sample_record();
+            record.run_id = format!("run-alt-{i:04}-{pad_gt}-{pad_qm}");
+            if sign_record_dsse(&mut record, &key, "gateway-key-1").is_err() {
+                continue;
+            }
+            let envelope = record.dsse_envelope.as_ref().expect("envelope attached");
+            let payload_has_both =
+                envelope.payload.contains('+') && envelope.payload.contains('/');
+            let sig_has_alt = envelope.signatures[0]
+                .sig
+                .chars()
+                .any(|c| c == '+' || c == '/');
+            if payload_has_both && sig_has_alt {
+                return (record, key);
+            }
+        }
+        panic!("could not construct a base64 vector with alternate-alphabet characters");
+    }
+
+    #[test]
+    fn urlsafe_payload_encoding_is_accepted() {
+        let (mut record, key) = signed_record_with_alternate_alphabet();
+        let verifying_key = VerifyingKey::from(&key);
+
+        // URL-safe the payload, keep the signature standard.
+        {
+            let envelope = record.dsse_envelope.as_mut().expect("envelope");
+            envelope.payload = envelope.payload.replace('+', "-").replace('/', "_");
+        }
+        verify_record_dsse(&record, &verifying_key)
+            .expect("URL-safe payload alphabet must be accepted");
+
+        // URL-safe both payload and signature.
+        {
+            let envelope = record.dsse_envelope.as_mut().expect("envelope");
+            envelope.signatures[0].sig =
+                envelope.signatures[0].sig.replace('+', "-").replace('/', "_");
+        }
+        verify_record_dsse(&record, &verifying_key)
+            .expect("URL-safe payload + signature alphabets must both be accepted");
+    }
+
+    #[test]
+    fn urlsafe_signature_encoding_is_accepted() {
+        // Standard payload, URL-safe signature only.
+        let (mut record, key) = signed_record_with_alternate_alphabet();
+        {
+            let envelope = record.dsse_envelope.as_mut().expect("envelope");
+            envelope.signatures[0].sig =
+                envelope.signatures[0].sig.replace('+', "-").replace('/', "_");
+        }
+        let verifying_key = VerifyingKey::from(&key);
+        verify_record_dsse(&record, &verifying_key)
+            .expect("URL-safe signature alphabet must be accepted");
+    }
+
+    #[test]
+    fn mixed_alphabet_base64_is_accepted_uniquely() {
+        // A signature mixing '+' with '-' decodes uniquely under the
+        // bijection ('-'→'+', '_'→'/'): it must verify identically to the
+        // pure-standard and pure-URL-safe forms.
+        let (mut record, key) = signed_record_with_alternate_alphabet();
+        {
+            let envelope = record.dsse_envelope.as_mut().expect("envelope");
+            let sig = envelope.signatures[0].sig.clone();
+            // Flip the FIRST alternate char to the other alphabet: pure
+            // standard becomes mixed, still uniquely decodable.
+            let mixed: String = sig
+                .chars()
+                .map(|c| if c == '+' { '-' } else { c })
+                .collect();
+            assert_ne!(mixed, sig, "vector must contain '+'");
+            envelope.signatures[0].sig = mixed;
+        }
+        let verifying_key = VerifyingKey::from(&key);
+        verify_record_dsse(&record, &verifying_key)
+            .expect("mixed-alphabet base64 decodes uniquely and must be accepted");
     }
 }
