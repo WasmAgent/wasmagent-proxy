@@ -101,11 +101,15 @@ mod tamper_matrix {
     #[test]
     fn tampered_observed_grades_fail() {
         let (mut record, vk) = signed_fixture();
+        // Set attribution grading fields on the record, then tamper.
+        record.run_attribution_backing_floor = Some("operator_asserted".into());
+        record.run_attribution_backing_observed = Some(vec!["operator_asserted".into()]);
+        // Tamper: escalate observed grades after signing.
         record
             .run_attribution_backing_observed
             .as_mut()
-            .expect("fixture carries observed grades")
-            .push("unknown".into());
+            .expect("observed set")
+            .push("qualified_signature".into());
         assert!(verify_record_dsse(&record, &vk).is_err());
     }
 

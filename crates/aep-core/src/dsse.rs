@@ -152,11 +152,14 @@ pub fn sign_record_dsse(
 
     let statement = wrap_in_toto_statement(unsigned, &run_id, &payload_digest);
     let statement_json = canonical_json(&statement);
-    let payload_b64 = base64::engine::general_purpose::STANDARD.encode(statement_json.as_bytes());
-
-    let pae = pae_encode(IN_TOTO_PAYLOAD_TYPE, payload_b64.as_bytes());
+    // DSSE 1.0.2 §2: PAE covers the DECODED serialized body bytes, NOT the
+    // base64 text from the JSON envelope. The statement JSON string is the
+    // serialized body — PAE is computed over its raw UTF-8 bytes.
+    let pae = pae_encode(IN_TOTO_PAYLOAD_TYPE, statement_json.as_bytes());
     let sig = key.sign(&pae);
     let sig_b64 = encode_signature(&sig.to_bytes());
+
+    let payload_b64 = base64::engine::general_purpose::STANDARD.encode(statement_json.as_bytes());
 
     record.dsse_envelope = Some(DsseEnvelope {
         payload_type: IN_TOTO_PAYLOAD_TYPE.to_string(),
@@ -211,9 +214,13 @@ pub fn verify_record_dsse(
         return Err("dsse payload type mismatch");
     }
 
-    // PAE covers the base64 payload STRING bytes (not the decoded statement) —
-    // matching the JS verifier's paeEncode(payloadType, payloadB64) input.
-    let pae = pae_encode(&envelope.payload_type, envelope.payload.as_bytes());
+    // DSSE 1.0.2 §2: PAE covers the DECODED serialized body bytes, NOT the
+    // base64 text from the JSON envelope. Decode base64 first, then compute
+    // PAE over the raw body bytes.
+    let decoded_body = base64::engine::general_purpose::STANDARD
+        .decode(envelope.payload.as_bytes())
+        .map_err(|_| "dsse payload is not valid base64")?;
+    let pae = pae_encode(&envelope.payload_type, &decoded_body);
     verifying_key
         .verify(&pae, &sig)
         .map_err(|_| "dsse PAE signature verification failed")?;
