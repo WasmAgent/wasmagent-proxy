@@ -232,8 +232,8 @@ pub fn verify_record_dsse(
     // DSSE 1.0.2 §2: PAE covers the DECODED serialized body bytes, NOT the
     // base64 text from the JSON envelope. Decode base64 first, then compute
     // PAE over the raw body bytes.
-    let decoded_body = decode_base64_lenient(&envelope.payload)
-        .map_err(|_| "dsse payload is not valid base64")?;
+    let decoded_body =
+        decode_base64_lenient(&envelope.payload).map_err(|_| "dsse payload is not valid base64")?;
     let pae = pae_encode(&envelope.payload_type, &decoded_body);
     verifying_key
         .verify(&pae, &sig)
@@ -315,8 +315,7 @@ fn decode_base64_lenient(input: &str) -> Result<Vec<u8>, &'static str> {
 }
 
 fn payload_bytes_decoded(envelope: &DsseEnvelope) -> Result<Vec<u8>, &'static str> {
-    decode_base64_lenient(&envelope.payload)
-        .map_err(|_| "dsse payload is not valid base64")
+    decode_base64_lenient(&envelope.payload).map_err(|_| "dsse payload is not valid base64")
 }
 
 #[cfg(test)]
@@ -418,8 +417,10 @@ mod adversarial_tests {
         // The pair ships together: an itemized observed list without a floor
         // is exactly the shape that permits masking — reject, don't sign.
         let mut record = record_with("run-obs-no-floor", "bash");
-        record.run_attribution_backing_observed =
-            Some(vec!["operator_asserted".into(), "qualified_signature".into()]);
+        record.run_attribution_backing_observed = Some(vec![
+            "operator_asserted".into(),
+            "qualified_signature".into(),
+        ]);
         record.run_attribution_backing_floor = None;
         let key = ed25519_dalek::SigningKey::from_bytes(&[1u8; 32]);
         let err = sign_record_dsse(&mut record, &key, "k").unwrap_err();
@@ -656,8 +657,7 @@ mod tests {
                 continue;
             }
             let envelope = record.dsse_envelope.as_ref().expect("envelope attached");
-            let payload_has_both =
-                envelope.payload.contains('+') && envelope.payload.contains('/');
+            let payload_has_both = envelope.payload.contains('+') && envelope.payload.contains('/');
             let sig_has_alt = envelope.signatures[0]
                 .sig
                 .chars()
@@ -685,8 +685,10 @@ mod tests {
         // URL-safe both payload and signature.
         {
             let envelope = record.dsse_envelope.as_mut().expect("envelope");
-            envelope.signatures[0].sig =
-                envelope.signatures[0].sig.replace('+', "-").replace('/', "_");
+            envelope.signatures[0].sig = envelope.signatures[0]
+                .sig
+                .replace('+', "-")
+                .replace('/', "_");
         }
         verify_record_dsse(&record, &verifying_key)
             .expect("URL-safe payload + signature alphabets must both be accepted");
@@ -698,8 +700,10 @@ mod tests {
         let (mut record, key) = signed_record_with_alternate_alphabet();
         {
             let envelope = record.dsse_envelope.as_mut().expect("envelope");
-            envelope.signatures[0].sig =
-                envelope.signatures[0].sig.replace('+', "-").replace('/', "_");
+            envelope.signatures[0].sig = envelope.signatures[0]
+                .sig
+                .replace('+', "-")
+                .replace('/', "_");
         }
         let verifying_key = VerifyingKey::from(&key);
         verify_record_dsse(&record, &verifying_key)
