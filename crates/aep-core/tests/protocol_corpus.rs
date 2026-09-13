@@ -111,6 +111,17 @@ fn protocol_corpus_authenticity_and_chain() {
         &std::fs::read_to_string(corpus.join("manifest.json")).expect("read manifest"),
     )
     .expect("manifest json");
+
+    // Signing-profile gate: refuse a corpus whose manifest profile is not the
+    // one this verifier implements (stale manifest = loud failure, never a
+    // silent pass under a retired construction).
+    const SUPPORTED_PROFILE: &str = "aep-dsse-ed25519-decoded-body-v1";
+    assert_eq!(
+        manifest.get("signing_profile_id").and_then(|v| v.as_str()),
+        Some(SUPPORTED_PROFILE),
+        "unsupported or stale signing_profile_id — expected {SUPPORTED_PROFILE}"
+    );
+
     let entries = manifest
         .get("conformance_target")
         .and_then(|v| v.as_array())

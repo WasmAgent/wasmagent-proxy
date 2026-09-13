@@ -26,6 +26,10 @@ struct EvidenceMetrics {
     validation: u32,
     delta: u32,
     full: u32,
+    /// Host clock unavailable — evidence falls back to epoch 0. A non-zero
+    /// value means recorded timestamps are NOT trustworthy wall-clock times
+    /// and capture completeness claims are weakened.
+    clock_failure: u32,
 }
 
 impl EvidenceMetrics {
@@ -36,6 +40,11 @@ impl EvidenceMetrics {
             delta: define_metric(MetricType::Counter, &format!("{}.delta", METRIC_BASE))
                 .unwrap_or(0),
             full: define_metric(MetricType::Counter, &format!("{}.full", METRIC_BASE)).unwrap_or(0),
+            clock_failure: define_metric(
+                MetricType::Counter,
+                &format!("{}.clock_failure_total", METRIC_BASE),
+            )
+            .unwrap_or(0),
         }
     }
 
@@ -148,9 +157,17 @@ impl EvidenceFilter {
 
     /// Unix-milliseconds timestamp for evidence records, sourced from the
     /// host so the Wasm module needs no direct wall-clock access. Falls back
-    /// to 0 if the host call fails.
+    /// to 0 when the host call fails — and INCREMENTS `aep_clock_failure_total`
+    /// so silent epoch-0 timestamps are observable rather than masquerading as
+    /// clean capture.
     fn current_time_ms(&self) -> u64 {
-        get_current_time().map(unix_millis).unwrap_or(0)
+        match get_current_time().map(unix_millis) {
+            Ok(ts) => ts,
+            Err(_) => {
+                increment_metric(self.metrics.clock_failure, 1);
+                0
+            }
+        }
     }
 }
 
