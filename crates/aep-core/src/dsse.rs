@@ -82,6 +82,28 @@ fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(hasher.finalize())
 }
 
+/// Decode base64 accepting both standard (+/) and URL-safe (-_) alphabets,
+/// with or without padding. `encode_signature` uses STANDARD (padded), but
+/// JS-emitted signatures may use URL-safe or unpadded forms.
+fn decode_base64_lenient(input: &str) -> Result<Vec<u8>, &'static str> {
+    let mut normalized = String::with_capacity(input.len() + 2);
+    for c in input.chars() {
+        match c {
+            '-' => normalized.push('+'),
+            '_' => normalized.push('/'),
+            other => normalized.push(other),
+        }
+    }
+    match normalized.len() % 4 {
+        2 => normalized.push_str("=="),
+        3 => normalized.push('='),
+        _ => {}
+    }
+    base64::engine::general_purpose::STANDARD
+        .decode(&normalized)
+        .map_err(|_| "dsse signature is not valid base64")
+}
+
 /// in-toto Statement wrapper — same shape as the JS `wrapInTotoStatement`.
 fn wrap_in_toto_statement(predicate: Value, run_id: &str, payload_digest_hex: &str) -> Value {
     json!({
@@ -161,11 +183,11 @@ pub fn sign_record_dsse(
 
     let pae = pae_encode(IN_TOTO_PAYLOAD_TYPE, payload_b64.as_bytes());
     let sig_bytes: [u8; 64] = key.sign(&pae).to_bytes();
-    let sig_hex = encode_signature(&sig_bytes);
+    let sig_b64 = encode_signature(&sig_bytes);
 
     let dsse_sig = DsseSignature {
         keyid: key_id.to_string(),
-        sig: sig_hex,
+        sig: sig_b64,
     };
     let envelope = DsseEnvelope {
         payload_type: IN_TOTO_PAYLOAD_TYPE.to_string(),
@@ -203,9 +225,10 @@ pub fn verify_record_dsse(
         return Err("no signatures in envelope".into());
     }
 
-    // Verify the PAE signature.
-    let sig_hex = &envelope.signatures[0].sig;
-    let sig_bytes = hex::decode(sig_hex).map_err(|e| format!("sig hex decode: {e}"))?;
+    // Verify the PAE signature. The sig field carries base64 (from encode_signature).
+    let sig_b64 = &envelope.signatures[0].sig;
+    let sig_bytes = decode_base64_lenient(sig_b64)
+        .map_err(|e| format!("sig base64 decode: {e}"))?;
     let sig_array: [u8; 64] = sig_bytes
         .try_into()
         .map_err(|_| "signature is not 64 bytes")?;
@@ -471,13 +494,13 @@ mod tests {
         sign_record_dsse(&mut record, &key, "gateway-key-1").expect("sign");
 
         // Corrupt only the envelope signature bytes — the PAE verify step
-        // catches this first, so we expect an error.
+        // catches this first, so we expect a signature-invalid error.
         let env = record.dsse_envelope.as_mut().unwrap();
-        env.signatures[0].sig = "deadbeef".repeat(16);
+        env.signatures[0].sig = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef".into();
         let verifying_key = VerifyingKey::from(&key);
         let err = verify_record_dsse(&record, &verifying_key).unwrap_err();
         assert!(
-            err.contains("DSSE signature invalid") || err.contains("sig hex decode"),
+            err.contains("DSSE signature invalid") || err.contains("sig base64 decode") || err.contains("signature is not 64 bytes"),
             "unexpected error: {err}"
         );
     }
