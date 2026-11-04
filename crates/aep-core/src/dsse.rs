@@ -181,7 +181,10 @@ pub fn sign_record_dsse(
 
     let payload_b64 = base64::engine::general_purpose::STANDARD.encode(&statement_bytes);
 
-    let pae = pae_encode(IN_TOTO_PAYLOAD_TYPE, payload_b64.as_bytes());
+    // DSSE 1.0.2 §2: PAE covers the decoded serialized body bytes, NOT the
+    // base64 text. JS emitter uses TextEncoder().encode(statementJson), which
+    // is the same byte sequence as statement_bytes.
+    let pae = pae_encode(IN_TOTO_PAYLOAD_TYPE, &statement_bytes);
     let sig_bytes: [u8; 64] = key.sign(&pae).to_bytes();
     let sig_b64 = encode_signature(&sig_bytes);
 
@@ -225,6 +228,12 @@ pub fn verify_record_dsse(
         return Err("no signatures in envelope".into());
     }
 
+    // Decode payload first: PAE and binding check both need the raw bytes.
+    // DSSE 1.0.2 §2: PAE covers the decoded body bytes, NOT the base64 text.
+    let statement_bytes = base64::engine::general_purpose::STANDARD
+        .decode(&envelope.payload)
+        .map_err(|e| format!("payload base64 decode: {e}"))?;
+
     // Verify the PAE signature. The sig field carries base64 (from encode_signature).
     let sig_b64 = &envelope.signatures[0].sig;
     let sig_bytes =
@@ -234,15 +243,12 @@ pub fn verify_record_dsse(
         .map_err(|_| "signature is not 64 bytes")?;
     let sig = ed25519_dalek::Signature::from_bytes(&sig_array);
 
-    let pae = pae_encode(IN_TOTO_PAYLOAD_TYPE, envelope.payload.as_bytes());
+    let pae = pae_encode(IN_TOTO_PAYLOAD_TYPE, &statement_bytes);
     verifying_key
         .verify(&pae, &sig)
         .map_err(|e| format!("DSSE signature invalid: {e}"))?;
 
     // Check that the payload's statement digest binds this record.
-    let statement_bytes = base64::engine::general_purpose::STANDARD
-        .decode(&envelope.payload)
-        .map_err(|e| format!("payload base64 decode: {e}"))?;
     let statement: serde_json::Value = serde_json::from_slice(&statement_bytes)
         .map_err(|e| format!("statement JSON parse: {e}"))?;
 
