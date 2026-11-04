@@ -445,8 +445,7 @@ mod tests {
     fn observed_without_floor_is_rejected() {
         let mut record = sample_record();
         record.run_attribution_backing_floor = None;
-        record.run_attribution_backing_observed =
-            Some(vec!["principal_key_signed".into()]);
+        record.run_attribution_backing_observed = Some(vec!["principal_key_signed".into()]);
         let key = ed25519_dalek::SigningKey::from_bytes(&[7u8; 32]);
         assert!(sign_record_dsse(&mut record, &key, "k").is_err());
     }
@@ -553,8 +552,7 @@ mod tests {
         let out = canonical_json(&v);
         let reparsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
         assert_eq!(
-            v,
-            reparsed,
+            v, reparsed,
             "canonical form {out:?} decodes uniquely and must be accepted"
         );
     }
