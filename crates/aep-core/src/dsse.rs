@@ -103,11 +103,7 @@ fn wrap_in_toto_statement(predicate: Value, run_id: &str, payload_digest_hex: &s
 /// 3. canonical JSON → `payload_digest` (sha256 hex),
 /// 4. wrap the predicate in an in-toto Statement whose subject binds the digest,
 /// 5. payload = base64(statement JSON); sign `PAE(payloadType, payload)`,
-/// 6. attach `dsse_envelope` and mirror the envelope signature into the
-///    legacy `signature` field for backward compatibility.
-///
-/// The existing [`crate::sign_record`] legacy signature is replaced by the
-/// PAE signature exactly as the JS emitter does.
+/// 6. attach `dsse_envelope`; clear the legacy `signature` field.
 pub fn sign_record_dsse(
     record: &mut AepRecord,
     key: &ed25519_dalek::SigningKey,
@@ -124,6 +120,9 @@ pub fn sign_record_dsse(
     //   floor set + observed empty  → reject (cannot verify weakest)
     //   observed set + floor absent → reject (unanchored grading)
     //   observed set + floor present but floor > min(observed) → reject
+    //
+    // run_attribution_backing_floor and _observed are plain strings carrying
+    // the canonical backing-grade vocabulary (e.g. "principal_key_signed").
     if let Some(floor) = &record.run_attribution_backing_floor {
         let observed = record
             .run_attribution_backing_observed
@@ -134,12 +133,11 @@ pub fn sign_record_dsse(
         }
         let weakest = observed
             .iter()
-            .min_by_key(|g| grade_rank(&g.grade))
+            .min_by_key(|g| grade_rank(g))
             .ok_or("observed is empty")?;
-        if grade_rank(&floor.grade) > grade_rank(&weakest.grade) {
+        if grade_rank(floor) > grade_rank(weakest) {
             return Err(format!(
-                "floor ({}) is stronger than weakest observed ({})",
-                floor.grade, weakest.grade
+                "floor ({floor}) is stronger than weakest observed ({weakest})"
             ));
         }
     } else if record.run_attribution_backing_observed.is_some() {
@@ -167,7 +165,7 @@ pub fn sign_record_dsse(
 
     let dsse_sig = DsseSignature {
         keyid: key_id.to_string(),
-        sig: sig_hex.clone(),
+        sig: sig_hex,
     };
     let envelope = DsseEnvelope {
         payload_type: IN_TOTO_PAYLOAD_TYPE.to_string(),
@@ -176,10 +174,6 @@ pub fn sign_record_dsse(
     };
 
     record.dsse_envelope = Some(envelope);
-    record.signature = Some(DsseSignature {
-        keyid: key_id.to_string(),
-        sig: sig_hex,
-    });
 
     Ok(())
 }
@@ -261,12 +255,15 @@ pub fn verify_record_dsse(
 }
 
 /// Grade rank for floor consistency checks (lower = weaker).
+/// Operates on the canonical backing-grade vocabulary strings carried by
+/// `run_attribution_backing_floor` and `_observed`.
 fn grade_rank(grade: &str) -> u8 {
     match grade {
-        "A" => 4,
-        "B" => 3,
-        "C" => 2,
-        "D" => 1,
+        "none" => 0,
+        "operator_asserted" => 1,
+        "principal_key_signed" => 2,
+        "organization_attested" => 3,
+        "subject_consented" => 4,
         _ => 0,
     }
 }
@@ -374,10 +371,6 @@ mod tests {
 
         let envelope = record.dsse_envelope.as_ref().expect("envelope attached");
         assert_eq!(envelope.payload_type, IN_TOTO_PAYLOAD_TYPE);
-        assert_eq!(
-            record.signature.as_ref().unwrap().sig,
-            envelope.signatures[0].sig
-        );
 
         let verifying_key = VerifyingKey::from(&key);
         verify_record_dsse(&record, &verifying_key).expect("dsse verification");
@@ -432,22 +425,17 @@ mod tests {
 
     #[test]
     fn floor_stronger_than_weakest_observed_is_rejected() {
-        use crate::evidence::{AttributionGrade, AttributionGradeEntry};
         let mut record = sample_record();
-        record.run_attribution_backing_floor = Some(AttributionGrade { grade: "A".into() });
-        record.run_attribution_backing_observed = Some(vec![AttributionGradeEntry {
-            grade: "C".into(),
-            count: 1,
-        }]);
+        record.run_attribution_backing_floor = Some("subject_consented".into());
+        record.run_attribution_backing_observed = Some(vec!["operator_asserted".into()]);
         let key = ed25519_dalek::SigningKey::from_bytes(&[7u8; 32]);
         assert!(sign_record_dsse(&mut record, &key, "k").is_err());
     }
 
     #[test]
     fn floor_without_observed_is_rejected() {
-        use crate::evidence::AttributionGrade;
         let mut record = sample_record();
-        record.run_attribution_backing_floor = Some(AttributionGrade { grade: "B".into() });
+        record.run_attribution_backing_floor = Some("principal_key_signed".into());
         record.run_attribution_backing_observed = None;
         let key = ed25519_dalek::SigningKey::from_bytes(&[7u8; 32]);
         assert!(sign_record_dsse(&mut record, &key, "k").is_err());
@@ -455,22 +443,18 @@ mod tests {
 
     #[test]
     fn observed_without_floor_is_rejected() {
-        use crate::evidence::AttributionGradeEntry;
         let mut record = sample_record();
         record.run_attribution_backing_floor = None;
-        record.run_attribution_backing_observed = Some(vec![AttributionGradeEntry {
-            grade: "B".into(),
-            count: 1,
-        }]);
+        record.run_attribution_backing_observed =
+            Some(vec!["principal_key_signed".into()]);
         let key = ed25519_dalek::SigningKey::from_bytes(&[7u8; 32]);
         assert!(sign_record_dsse(&mut record, &key, "k").is_err());
     }
 
     #[test]
     fn empty_observed_with_floor_is_rejected() {
-        use crate::evidence::AttributionGrade;
         let mut record = sample_record();
-        record.run_attribution_backing_floor = Some(AttributionGrade { grade: "B".into() });
+        record.run_attribution_backing_floor = Some("principal_key_signed".into());
         record.run_attribution_backing_observed = Some(vec![]);
         let key = ed25519_dalek::SigningKey::from_bytes(&[7u8; 32]);
         assert!(sign_record_dsse(&mut record, &key, "k").is_err());
