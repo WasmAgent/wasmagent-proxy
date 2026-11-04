@@ -227,8 +227,8 @@ pub fn verify_record_dsse(
 
     // Verify the PAE signature. The sig field carries base64 (from encode_signature).
     let sig_b64 = &envelope.signatures[0].sig;
-    let sig_bytes = decode_base64_lenient(sig_b64)
-        .map_err(|e| format!("sig base64 decode: {e}"))?;
+    let sig_bytes =
+        decode_base64_lenient(sig_b64).map_err(|e| format!("sig base64 decode: {e}"))?;
     let sig_array: [u8; 64] = sig_bytes
         .try_into()
         .map_err(|_| "signature is not 64 bytes")?;
@@ -500,7 +500,9 @@ mod tests {
         let verifying_key = VerifyingKey::from(&key);
         let err = verify_record_dsse(&record, &verifying_key).unwrap_err();
         assert!(
-            err.contains("DSSE signature invalid") || err.contains("sig base64 decode") || err.contains("signature is not 64 bytes"),
+            err.contains("DSSE signature invalid")
+                || err.contains("sig base64 decode")
+                || err.contains("signature is not 64 bytes"),
             "unexpected error: {err}"
         );
     }
