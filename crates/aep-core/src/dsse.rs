@@ -568,6 +568,10 @@ mod tests {
         let v = serde_json::json!({"key": "\u{00E9}"}); // é
         let out = canonical_json(&v);
         let reparsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
-        assert_eq!(v, reparsed, "canonical form {out:?} decodes uniquely and must be accepted");
+        assert_eq!(
+            v,
+            reparsed,
+            "canonical form {out:?} decodes uniquely and must be accepted"
+        );
     }
 }
