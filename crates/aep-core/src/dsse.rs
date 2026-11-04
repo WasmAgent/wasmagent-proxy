@@ -150,8 +150,8 @@ pub fn sign_record_dsse(
     record.signature = None;
     record.dsse_envelope = None;
 
-    let predicate = serde_json::to_value(&*record)
-        .map_err(|e| format!("record serialization failed: {e}"))?;
+    let predicate =
+        serde_json::to_value(&*record).map_err(|e| format!("record serialization failed: {e}"))?;
 
     let payload_bytes = canonical_json(&predicate).into_bytes();
     let payload_digest = sha256_hex(&payload_bytes);
@@ -203,10 +203,7 @@ pub fn verify_record_dsse(
         .ok_or("dsse_envelope missing")?;
 
     if envelope.payload_type != IN_TOTO_PAYLOAD_TYPE {
-        return Err(format!(
-            "unexpected payloadType: {}",
-            envelope.payload_type
-        ));
+        return Err(format!("unexpected payloadType: {}", envelope.payload_type));
     }
     if envelope.signatures.is_empty() {
         return Err("no signatures in envelope".into());
@@ -405,11 +402,8 @@ mod tests {
         let mut record = sample_record();
         let key = ed25519_dalek::SigningKey::from_bytes(&[7u8; 32]);
         sign_record_dsse(&mut record, &key, "gateway-key-1").expect("sign");
-        record
-            .dsse_envelope
-            .as_mut()
-            .unwrap()
-            .payload_type = "application/vnd.in-toto+json; tampered".into();
+        record.dsse_envelope.as_mut().unwrap().payload_type =
+            "application/vnd.in-toto+json; tampered".into();
         let verifying_key = VerifyingKey::from(&key);
         assert!(verify_record_dsse(&record, &verifying_key).is_err());
     }
@@ -520,7 +514,10 @@ mod tests {
     #[test]
     fn nested_objects_are_recursively_sorted() {
         let v = serde_json::json!({"z": {"b": 1, "a": 2}, "a": [3, 2, 1]});
-        assert_eq!(canonical_json(&v), "{\"a\":[3,2,1],\"z\":{\"a\":2,\"b\":1}}");
+        assert_eq!(
+            canonical_json(&v),
+            "{\"a\":[3,2,1],\"z\":{\"a\":2,\"b\":1}}"
+        );
     }
 
     #[test]
@@ -545,7 +542,10 @@ mod tests {
     fn empty_object_and_array_round_trip() {
         assert_eq!(canonical_json(&serde_json::json!({})), "{}");
         assert_eq!(canonical_json(&serde_json::json!([])), "[]");
-        assert_eq!(canonical_json(&serde_json::json!({"a": [], "b": {}})), "{\"a\":[],\"b\":{}}");
+        assert_eq!(
+            canonical_json(&serde_json::json!({"a": [], "b": {}})),
+            "{\"a\":[],\"b\":{}}"
+        );
     }
 
     #[test]
@@ -565,7 +565,7 @@ mod tests {
     fn unicode_escape_sequences_decode_uniquely() {
         // JSON allows both \uXXXX and literal UTF-8; serde_json picks one form.
         // Whatever form it picks, it must parse back to the same value.
-        let v = serde_json::json!({"key": "\u{00E9}"});  // é
+        let v = serde_json::json!({"key": "\u{00E9}"}); // é
         let out = canonical_json(&v);
         let reparsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
         assert_eq!(v, reparsed, "canonical form {out:?} decodes uniquely and must be accepted");
