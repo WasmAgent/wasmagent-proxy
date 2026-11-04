@@ -252,6 +252,18 @@ pub fn verify_record_dsse(
     let statement: serde_json::Value = serde_json::from_slice(&statement_bytes)
         .map_err(|e| format!("statement JSON parse: {e}"))?;
 
+    // Reject envelopes whose predicateType does not match our implementation.
+    // A wrong predicateType means the statement was produced for a different
+    // version or schema; accepting it silently would mask version drift.
+    let actual_predicate_type = statement["predicateType"]
+        .as_str()
+        .ok_or("statement.predicateType missing or not a string")?;
+    if actual_predicate_type != AEP_PREDICATE_TYPE {
+        return Err(format!(
+            "predicateType mismatch: expected {AEP_PREDICATE_TYPE}, got {actual_predicate_type}"
+        ));
+    }
+
     // Re-derive the canonical predicate from the record (strip dsse_envelope + signature).
     let mut record_for_predicate = record.clone();
     record_for_predicate.dsse_envelope = None;
