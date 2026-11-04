@@ -18,6 +18,7 @@ use crate::evidence::{AepRecord, DsseEnvelope, DsseSignature};
 use crate::signing::encode_signature;
 
 pub const IN_TOTO_PAYLOAD_TYPE: &str = "application/vnd.in-toto+json";
+pub const IN_TOTO_STATEMENT_TYPE: &str = "https://in-toto.io/Statement/v1";
 pub const AEP_PREDICATE_TYPE: &str = "https://wasmagent.dev/attestations/aep/v0.4";
 
 /// DSSE Pre-Authentication Encoding:
@@ -227,6 +228,15 @@ pub fn verify_record_dsse(
     if envelope.signatures.is_empty() {
         return Err("no signatures in envelope".into());
     }
+    // AEP signature-count policy: exactly one signature.
+    // Multi-signature semantics are deliberately undefined; accepting multisig
+    // envelopes would silently permit policy-undefined constructions.
+    if envelope.signatures.len() != 1 {
+        return Err(format!(
+            "AEP requires exactly one signature, got {}",
+            envelope.signatures.len()
+        ));
+    }
 
     // Decode payload first: PAE and binding check both need the raw bytes.
     // DSSE 1.0.2 §2: PAE covers the decoded body bytes, NOT the base64 text.
@@ -251,6 +261,18 @@ pub fn verify_record_dsse(
     // Check that the payload's statement digest binds this record.
     let statement: serde_json::Value = serde_json::from_slice(&statement_bytes)
         .map_err(|e| format!("statement JSON parse: {e}"))?;
+
+    // Reject non-in-toto statement types: _type must be the in-toto v1 URI.
+    // A different _type means the payload was produced for a different
+    // attestation framework and must not be silently accepted as AEP.
+    let actual_statement_type = statement["_type"]
+        .as_str()
+        .ok_or("statement._type missing or not a string")?;
+    if actual_statement_type != IN_TOTO_STATEMENT_TYPE {
+        return Err(format!(
+            "statement._type mismatch: expected {IN_TOTO_STATEMENT_TYPE}, got {actual_statement_type}"
+        ));
+    }
 
     // Reject envelopes whose predicateType does not match our implementation.
     // A wrong predicateType means the statement was produced for a different
@@ -279,6 +301,20 @@ pub fn verify_record_dsse(
     if subjects.is_empty() {
         return Err("statement.subject is empty".into());
     }
+
+    // Subject name must be present and must bind this record's run_id.
+    // A missing name cannot bind the attestation to any run; a wrong name
+    // binds it to a different run — both are authenticity failures.
+    let expected_subject_name = format!("urn:wasmagent:run:{}", record.run_id);
+    let actual_subject_name = subjects[0]["name"]
+        .as_str()
+        .ok_or("subject[0].name missing or not a string")?;
+    if actual_subject_name != expected_subject_name {
+        return Err(format!(
+            "subject name mismatch: expected {expected_subject_name}, got {actual_subject_name}"
+        ));
+    }
+
     let digest_map = subjects[0]["digest"]
         .as_object()
         .ok_or("subject[0].digest is not an object")?;
